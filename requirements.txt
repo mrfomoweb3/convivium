@@ -1,0 +1,12 @@
+fastapi==0.143.2
+uvicorn==0.54.0
+langgraph==1.2.15
+langchain-core==1.6.11
+langchain-anthropic==1.7.6
+langchain-openai==1.7.2
+mem0ai==2.2.1
+icalendar==7.3.0
+httpx==0.28.1
+pydantic==2.14.1
+pytest==9.1.1
+pytest-asyncio==1.4.0
