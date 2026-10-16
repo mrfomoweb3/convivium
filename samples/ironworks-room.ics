@@ -1,0 +1,23 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Convivium demo//Ironworks Room//EN
+X-WR-CALNAME:Ironworks Room (sample)
+BEGIN:VEVENT
+UID:ironworks-room-1@convivium.demo
+DTSTAMP:20261001T000000Z
+DTSTART;TZID=America/New_York:20261111T193000
+DTEND;TZID=America/New_York:20261111T235900
+SUMMARY:Laufey (Live)
+LOCATION:Ironworks Room (fictional venue)
+DESCRIPTION:Sample calendar for the Convivium demo. Not a real tour date.
+END:VEVENT
+BEGIN:VEVENT
+UID:ironworks-room-2@convivium.demo
+DTSTAMP:20261001T000000Z
+DTSTART;TZID=America/New_York:20261204T193000
+DTEND;TZID=America/New_York:20261204T235900
+SUMMARY:Turnstile with Militarie Gun
+LOCATION:Ironworks Room (fictional venue)
+DESCRIPTION:Sample calendar for the Convivium demo. Not a real tour date.
+END:VEVENT
+END:VCALENDAR

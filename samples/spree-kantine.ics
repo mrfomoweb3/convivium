@@ -1,0 +1,23 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Convivium demo//Spree Kantine//EN
+X-WR-CALNAME:Spree Kantine (sample)
+BEGIN:VEVENT
+UID:spree-kantine-1@convivium.demo
+DTSTAMP:20261001T000000Z
+DTSTART;TZID=Europe/Berlin:20261128T210000
+DTEND;TZID=Europe/Berlin:20261128T235900
+SUMMARY:Fred again.. with Joy Anonymous
+LOCATION:Spree Kantine (fictional venue)
+DESCRIPTION:Sample calendar for the Convivium demo. Not a real tour date.
+END:VEVENT
+BEGIN:VEVENT
+UID:spree-kantine-2@convivium.demo
+DTSTAMP:20261001T000000Z
+DTSTART;TZID=Europe/Berlin:20261217T200000
+DTEND;TZID=Europe/Berlin:20261217T235900
+SUMMARY:Nils Frahm
+LOCATION:Spree Kantine (fictional venue)
+DESCRIPTION:Sample calendar for the Convivium demo. Not a real tour date.
+END:VEVENT
+END:VCALENDAR

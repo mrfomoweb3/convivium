@@ -1,0 +1,23 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Convivium demo//Casa Sonora//EN
+X-WR-CALNAME:Casa Sonora (sample)
+BEGIN:VEVENT
+UID:casa-sonora-1@convivium.demo
+DTSTAMP:20261001T000000Z
+DTSTART;TZID=America/Mexico_City:20261120T210000
+DTEND;TZID=America/Mexico_City:20261120T235900
+SUMMARY:Peso Pluma
+LOCATION:Casa Sonora (fictional venue)
+DESCRIPTION:Sample calendar for the Convivium demo. Not a real tour date.
+END:VEVENT
+BEGIN:VEVENT
+UID:casa-sonora-2@convivium.demo
+DTSTAMP:20261001T000000Z
+DTSTART;TZID=America/Mexico_City:20261211T203000
+DTEND;TZID=America/Mexico_City:20261211T235900
+SUMMARY:Natalia Lafourcade
+LOCATION:Casa Sonora (fictional venue)
+DESCRIPTION:Sample calendar for the Convivium demo. Not a real tour date.
+END:VEVENT
+END:VCALENDAR

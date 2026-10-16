@@ -1,0 +1,23 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Convivium demo//Kiln Live//EN
+X-WR-CALNAME:Kiln Live (sample)
+BEGIN:VEVENT
+UID:kiln-live-1@convivium.demo
+DTSTAMP:20261001T000000Z
+DTSTART;TZID=Asia/Tokyo:20261118T190000
+DTEND;TZID=Asia/Tokyo:20261118T235900
+SUMMARY:YOASOBI
+LOCATION:Kiln Live (fictional venue)
+DESCRIPTION:Sample calendar for the Convivium demo. Not a real tour date.
+END:VEVENT
+BEGIN:VEVENT
+UID:kiln-live-2@convivium.demo
+DTSTAMP:20261001T000000Z
+DTSTART;TZID=Asia/Tokyo:20261209T190000
+DTEND;TZID=Asia/Tokyo:20261209T235900
+SUMMARY:Hiromi
+LOCATION:Kiln Live (fictional venue)
+DESCRIPTION:Sample calendar for the Convivium demo. Not a real tour date.
+END:VEVENT
+END:VCALENDAR

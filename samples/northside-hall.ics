@@ -1,0 +1,23 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Convivium demo//Northside Hall//EN
+X-WR-CALNAME:Northside Hall (sample)
+BEGIN:VEVENT
+UID:northside-hall-1@convivium.demo
+DTSTAMP:20261001T000000Z
+DTSTART;TZID=Europe/London:20261119T193000
+DTEND;TZID=Europe/London:20261119T235900
+SUMMARY:Little Simz with Sampha — Lotus Tour
+LOCATION:Northside Hall (fictional venue)
+DESCRIPTION:Sample calendar for the Convivium demo. Not a real tour date.
+END:VEVENT
+BEGIN:VEVENT
+UID:northside-hall-2@convivium.demo
+DTSTAMP:20261001T000000Z
+DTSTART;TZID=Europe/London:20261204T190000
+DTEND;TZID=Europe/London:20261204T235900
+SUMMARY:Bring Me The Horizon
+LOCATION:Northside Hall (fictional venue)
+DESCRIPTION:Sample calendar for the Convivium demo. Not a real tour date.
+END:VEVENT
+END:VCALENDAR
