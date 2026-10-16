@@ -1,0 +1,8 @@
+.venv
+.git
+*.db
+*.db-*
+.env
+__pycache__
+.pytest_cache
+scripts/probe_out

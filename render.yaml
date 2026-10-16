@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: convivium
+    runtime: docker
+    plan: starter            # paid tier: must not sleep during judging (Nov 2-16)
+    healthCheckPath: /healthz
+    disk:
+      name: convivium-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: CONVIVIUM_DB
+        value: /data/convivium.db
+      - key: QLOO_BASE
+        value: https://hackathon.api.qloo.com
+      - key: QLOO_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: anthropic:claude-sonnet-5-5
+      - key: MEM0_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
+      - key: WATCH_INTERVAL_SECONDS
+        value: "900"
+      - key: SEED_DEMO
+        value: "1"
