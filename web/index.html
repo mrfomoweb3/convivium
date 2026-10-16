@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Convivium</title>
+  <meta name="description" content="An autonomous agent that plans the whole night around a concert from what that artist's fans actually love, using Qloo taste data.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2317142A'/%3E%3Ctext x='16' y='24' font-family='Arial Black,Arial' font-weight='900' font-size='22' text-anchor='middle' fill='%23FF4F8B'%3EC%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to the plan</a>
+  <header class="top">
+    <a class="wordmark" href="#">Convivium</a>
+    <p class="tagline">Plans the whole night around a concert from what that artist's fans actually love.</p>
+    <ul class="pills" id="pills" aria-label="System status"></ul>
+  </header>
+  <div class="banner" id="fixture-banner" hidden role="status">
+    Offline fixture data, not real Qloo results. Every name marked “(fixture)” is invented for development.
+  </div>
+
+  <div class="layout">
+    <aside class="rail" aria-label="Plan a show and watched venues">
+      <section class="rail-block">
+        <h2>Plan any show</h2>
+        <form id="try-form" class="form" novalidate>
+          <label>Artist
+            <input name="headliner" required autocomplete="off" placeholder="e.g. Laufey" maxlength="120">
+          </label>
+          <label>Support acts <span class="hint">optional, comma-separated</span>
+            <input name="support" autocomplete="off" placeholder="e.g. Militarie Gun" maxlength="300">
+          </label>
+          <label>City
+            <input name="city" required autocomplete="off" placeholder="e.g. Lagos, Seoul, São Paulo" maxlength="120">
+          </label>
+          <fieldset>
+            <legend>Venue rules</legend>
+            <label class="check"><input type="checkbox" name="no_alcohol"> Alcohol-free</label>
+            <div class="diet" role="group" aria-label="Must offer">
+              <span class="hint">Must offer</span>
+              <label class="check"><input type="checkbox" name="dietary" value="vegan"> Vegan</label>
+              <label class="check"><input type="checkbox" name="dietary" value="vegetarian"> Vegetarian</label>
+              <label class="check"><input type="checkbox" name="dietary" value="halal"> Halal</label>
+              <label class="check"><input type="checkbox" name="dietary" value="gluten-free"> Gluten-free</label>
+            </div>
+          </fieldset>
+          <p class="form-error" id="try-error" role="alert" hidden></p>
+          <button type="submit" class="primary">Plan the night</button>
+          <p class="hint">Takes about 10–30 seconds. Nothing is sent to anyone from this form.</p>
+        </form>
+      </section>
+
+      <section class="rail-block">
+        <h2>Venues being watched</h2>
+        <p class="hint" id="watch-hint">The agent reads each venue's calendar and plans every new or changed show on its own.</p>
+        <div id="venues"><p class="hint">Loading venues…</p></div>
+      </section>
+
+      <section class="rail-block">
+        <details id="connect">
+          <summary>Connect a venue</summary>
+          <form id="venue-form" class="form" novalidate>
+            <label>Venue name <input name="name" required maxlength="120"></label>
+            <label>City <input name="city" required maxlength="120"></label>
+            <label>Calendar feed <span class="hint">iCal or webcal URL</span>
+              <input name="ical_url" required placeholder="https://… .ics" maxlength="2000">
+            </label>
+            <label>Ops email <span class="hint">optional, gets every plan</span>
+              <input name="ops_email" type="email" maxlength="240">
+            </label>
+            <label>Capacity <span class="hint">optional</span><input name="capacity" type="number" min="0" inputmode="numeric"></label>
+            <fieldset>
+              <legend>Venue rules</legend>
+              <label class="check"><input type="checkbox" name="no_alcohol"> Alcohol-free</label>
+              <label>Must offer <span class="hint">comma-separated, e.g. halal, vegan</span><input name="dietary"></label>
+              <label>Most after-show partners <input name="max_partners" type="number" min="0" max="12" value="4"></label>
+              <label>Notes for the planner <textarea name="notes" rows="2" maxlength="600"></textarea></label>
+              <label>Partner contacts <span class="hint">one per line: Name = email</span>
+                <textarea name="contacts" rows="2"></textarea></label>
+            </fieldset>
+            <p class="form-error" id="venue-error" role="alert" hidden></p>
+            <button type="submit" class="primary">Connect venue</button>
+          </form>
+        </details>
+      </section>
+    </aside>
+
+    <main id="main" class="main" tabindex="-1">
+      <div id="view"></div>
+    </main>
+  </div>
+
+  <div class="tip" id="tip" role="tooltip" hidden></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
