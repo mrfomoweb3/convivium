@@ -52,3 +52,19 @@ async def test_violations_trigger_replan_and_guards_still_apply(monkeypatch):
     assert any(d["title"] == "Totally Invented DJ" for d in meta["dropped"])
     assert titles  # refilled from the Qloo artist pool by the rule fixer
     assert run["plan"]["non_alcoholic_share_pct"] == 100
+
+
+def test_groq_key_selects_groq_model(monkeypatch):
+    from app import config, llm
+
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test_not_real")
+    config.reload_settings()
+    llm.get_llm.cache_clear()
+    try:
+        assert llm.model_spec() == "groq:openai/gpt-oss-120b"
+        assert type(llm.get_llm()).__name__ == "ChatGroq"
+        assert llm.llm_label() == "openai/gpt-oss-120b"
+    finally:
+        monkeypatch.setenv("GROQ_API_KEY", "")
+        config.reload_settings()
+        llm.get_llm.cache_clear()

@@ -67,7 +67,7 @@ cp .env.example .env            # add QLOO_API_KEY for live data; leave blank fo
 uvicorn app.main:app --reload   # http://localhost:8000
 ```
 
-With no keys at all it runs on offline fixtures (clearly marked) with the deterministic composer, so you can try every feature. Add `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) to switch on the LLM composer and critic loop, and `MEM0_API_KEY`, `RESEND_API_KEY` and `WEBHOOK_URL` for Mem0 memory, real email and a team channel. All variables are in [.env.example](.env.example).
+With no keys at all it runs on offline fixtures (clearly marked) with the deterministic composer, so you can try every feature. Add `GROQ_API_KEY` to switch on the LLM composer and critic loop (default model `openai/gpt-oss-120b` on Groq; `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` also work, and `LLM_MODEL` picks any `provider:model`), and `MEM0_API_KEY`, `RESEND_API_KEY` and `WEBHOOK_URL` for Mem0 memory, real email and a team channel. All variables are in [.env.example](.env.example).
 
 **Day-1 API check:** `python scripts/qloo_probe.py` prints the raw JSON for every call above. `python scripts/qloo_probe.py --coverage` prints result counts for every demo artist and city.
 
@@ -81,7 +81,7 @@ They cover the graph end to end, the grounding and rules guards, the LLM critic 
 
 ## Deploy
 
-The repo includes a `Dockerfile` and a Render blueprint (`render.yaml`: a paid tier so it never sleeps, plus a persistent disk for SQLite). Set `QLOO_API_KEY`, `ANTHROPIC_API_KEY` and `PUBLIC_URL`. After deploying, `/healthz` should report `"qloo_mode": "live"`.
+The repo includes a `Dockerfile` and a Render blueprint (`render.yaml`: a paid tier so it never sleeps, plus a persistent disk for SQLite). Set `QLOO_API_KEY`, `GROQ_API_KEY` and `PUBLIC_URL`. After deploying, `/healthz` should report `"qloo_mode": "live"`.
 
 Map tiles: CARTO's dark basemap now needs an API key, so by default the map uses OpenStreetMap tiles darkened in CSS. Set `MAP_TILE_URL` to use another provider.
 

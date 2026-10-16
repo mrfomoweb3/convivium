@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-for key in ("QLOO_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "LLM_MODEL", "MEM0_API_KEY", "RESEND_API_KEY",
+for key in ("QLOO_API_KEY", "GROQ_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "LLM_MODEL", "MEM0_API_KEY", "RESEND_API_KEY",
             "WEBHOOK_URL"):
     os.environ[key] = ""
 os.environ.update(QLOO_FIXTURES="1", WATCHER_ENABLED="0", SEED_DEMO="0")

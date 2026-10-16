@@ -40,6 +40,7 @@ class Settings:
     llm_model: str
     anthropic_api_key: str
     openai_api_key: str
+    groq_api_key: str
     mem0_api_key: str
     resend_api_key: str
     mail_from: str
@@ -70,6 +71,7 @@ def settings() -> Settings:
         llm_model=env("LLM_MODEL", "").strip(),
         anthropic_api_key=env("ANTHROPIC_API_KEY", "").strip(),
         openai_api_key=env("OPENAI_API_KEY", "").strip(),
+        groq_api_key=env("GROQ_API_KEY", "").strip(),
         mem0_api_key=env("MEM0_API_KEY", "").strip(),
         resend_api_key=env("RESEND_API_KEY", "").strip(),
         mail_from=env("MAIL_FROM", "Convivium <agent@example.com>"),

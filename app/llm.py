@@ -10,12 +10,15 @@ log = logging.getLogger(__name__)
 
 DEFAULT_ANTHROPIC = "anthropic:claude-sonnet-5-5"
 DEFAULT_OPENAI = "openai:gpt-5-mini"
+DEFAULT_GROQ = "groq:openai/gpt-oss-120b"
 
 
 def model_spec() -> str:
     s = settings()
     if s.llm_model:
         return s.llm_model
+    if s.groq_api_key:
+        return DEFAULT_GROQ
     if s.anthropic_api_key:
         return DEFAULT_ANTHROPIC
     if s.openai_api_key:
@@ -36,6 +39,10 @@ def get_llm():
             from langchain_anthropic import ChatAnthropic
 
             return ChatAnthropic(model=name, api_key=s.anthropic_api_key, max_tokens=4096, timeout=90)
+        if provider == "groq" and s.groq_api_key:
+            from langchain_groq import ChatGroq
+
+            return ChatGroq(model=name, api_key=s.groq_api_key, max_tokens=4096, timeout=90, max_retries=2)
         if provider == "openai" and s.openai_api_key:
             from langchain_openai import ChatOpenAI
 
