@@ -78,13 +78,14 @@ DRINK_WORDS = (
 )
 ALCOHOL_WORDS = (
     "beer", "lager", "ale", "ipa", "stout", "wine", "cocktail", "spritz", "gin", "vodka", "rum", "tequila",
-    "mezcal", "whisky", "whiskey", "bourbon", "sake", "soju", "shochu", "shot", "negroni", "margarita",
+    "mezcal", "whisky", "whiskey", "bourbon", "sake", "soju", "shochu", "negroni", "margarita",
     "prosecco", "champagne", "cava", "cider", "martini", "highball", "vermouth", "aperitivo", "liqueur",
-    "spirit", "pour", "michelada", "pisco", "cachaça", "caipirinha", "baijiu", "brandy", "cognac",
+    "spirits", "liquor", "michelada", "pisco", "cachaça", "caipirinha", "baijiu", "brandy", "cognac",
 )
 NA_MARKERS = (
     "zero-proof", "zero proof", "non-alcoholic", "non alcoholic", "alcohol-free", "alcohol free", "mocktail",
-    "0%", "no-alcohol", "virgin", "sin alcohol", "soft drink", "temperance", "0.0",
+    "0%", "no-alcohol", "virgin", "sin alcohol", "soft drink", "temperance", "0.0", "ginger beer", "root beer",
+    "ginger ale", "birch beer",
 )
 DIETARY_SYNONYMS = {
     "vegan": ("vegan", "plant-based"),
@@ -107,9 +108,15 @@ def norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", clean(text).lower()).strip()
 
 
-def _has_word(text: str, words: tuple[str, ...]) -> bool:
+def _has_word(text: str, words: tuple[str, ...], whole: bool = False) -> bool:
+    """Prefix match by default ("taco" finds "tacos"); ``whole`` also needs a word end, so "gin" skips "ginger"."""
     low = f" {text.lower()} "
-    return any(re.search(r"(?<![a-z])" + re.escape(w), low) for w in words)
+    end = r"(?:s|es)?(?![a-z])" if whole else ""
+    return any(re.search(r"(?<![a-z])" + re.escape(w) + end, low) for w in words)
+
+
+def is_alcohol_word(text: str) -> bool:
+    return _has_word(text, ALCOHOL_WORDS, whole=True)
 
 
 def is_food(text: str) -> bool:
@@ -124,7 +131,7 @@ def is_alcoholic(item: Item) -> bool:
     text = f"{item.title} {item.detail}".lower()
     if any(m in text for m in NA_MARKERS):
         return False
-    return _has_word(text, ALCOHOL_WORDS)
+    return is_alcohol_word(text)
 
 
 def matches(value: str, title: str) -> bool:
@@ -294,7 +301,7 @@ def add_dietary(items: list[Item], policy: Policy, cands: list[dict]) -> list[st
 
 def make_drinks(pools: dict, policy: Policy, lessons: dict) -> list[Item]:
     cands = drink_candidates(pools, lessons)
-    soft = [c for c in cands if not _has_word(c["label"], ALCOHOL_WORDS)]
+    soft = [c for c in cands if not is_alcohol_word(c["label"])]
     items: list[Item] = []
     if soft:
         items.append(Item(title=f"Zero-proof {soft[0]['label'].lower()} signature",
@@ -316,11 +323,11 @@ def make_drinks(pools: dict, policy: Policy, lessons: dict) -> list[Item]:
         label = c["label"].lower()
         cap = c["label"][:1].upper() + c["label"][1:]
         if policy.no_alcohol:
-            if _has_word(label, ALCOHOL_WORDS):
+            if is_alcohol_word(label):
                 title = f"Zero-proof take on {label}"
             else:
                 title = f"Zero-proof {label} cooler"
-        elif _has_word(label, ALCOHOL_WORDS):
+        elif is_alcohol_word(label):
             title = f"{cap} list picked for this crowd"
         else:
             title = f"{cap} highball"
@@ -529,15 +536,38 @@ def _unalias(plan: Plan, refs: dict[str, str]) -> Plan:
     for section in ("food", "drinks", "dj_set", "brands", "after_show"):
         for item in getattr(plan, section):
             item.evidence = [refs.get(str(e).strip(), str(e)) for e in item.evidence]
-            item.title, item.detail = strip_refs(item.title), strip_refs(item.detail)
+            item.title, item.detail = plain(strip_refs(item.title)), plain(strip_refs(item.detail))
             if not item.detail and section in CREATIVE_SECTIONS:  # "Name – description" in the title
                 parts = SPLIT_RE.split(item.title, maxsplit=1)
                 if len(parts) == 2 and len(parts[0]) >= 3:
                     item.title, item.detail = parts[0].strip(), parts[1].strip()[:1].upper() + parts[1].strip()[1:]
-    plan.headline, plan.audience_read = strip_refs(plan.headline), strip_refs(plan.audience_read)
-    plan.promo_focus = [strip_refs(x) for x in plan.promo_focus]
-    plan.run_of_show = [strip_refs(x) for x in plan.run_of_show]
+    plan.headline, plan.audience_read = plain(strip_refs(plan.headline)), plain(strip_refs(plan.audience_read))
+    plan.promo_focus = [plain(strip_refs(x)) for x in plan.promo_focus]
+    plan.run_of_show = [plain(strip_times(strip_refs(x))) for x in plan.run_of_show]
     return plan
+
+
+HYPE_WORDS = [(r"\bvibes\b", "mood"), (r"\bvibe\b", "feel"), (r"\bflair\b", "touch"), (r"\bsoir[ée]e\b", "night"),
+              (r"\bcurated\b", "chosen"), (r"\bimmersive\s+", ""), (r"\belevated?\s+", ""), (r"\bwhimsical\b", "playful"),
+              (r"\bethereal\b", "airy"), (r"\bkawaii\b", "cute")]
+
+
+def plain(text: str) -> str:
+    """Swap the marketing words a model slips in despite the prompt for plain ones."""
+    text = (text or "").replace("\u2011", "-")  # models love non-breaking hyphens; they break search and wrapping
+    for pat, rep in HYPE_WORDS:
+        text = re.sub(pat, rep, text, flags=re.IGNORECASE)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+TIME_RE = re.compile(r"^\s*(?:\d{1,2}:\d{2}\s*(?:[ap]\.?m\.?)?|\d{1,2}\s*[ap]\.?m\.?|\d{1,2}h\d{2})\s*(?:[–—:-]\s*)?",
+                     re.IGNORECASE)
+
+
+def strip_times(step: str) -> str:
+    """'7:30 pm – Doors open' -> 'Doors open'. The venue sets its own times."""
+    out = TIME_RE.sub("", step or "", count=1).strip()
+    return (out[:1].upper() + out[1:]) if out else step
 
 
 SYSTEM_PROMPT = """You are Convivium, an agent that plans the whole night around a concert for a venue team:
@@ -558,6 +588,19 @@ Hard rules:
 - Use 6-10 dj_set items, 2-3 brands, 3-5 food items, 3-5 drinks (always include a non-alcoholic signature),
   2 promo_focus ideas (the agent adds Qloo heatmap hotspots itself), and 5-7 run_of_show steps.
 - Support human creatives: write as suggestions for the venue's chefs, bartenders and DJs, not replacements.
+
+Voice (this is an ops sheet for venue staff, not marketing copy):
+- Plain and specific. Name food and drinks the way a menu would, not as a pitch. Each detail says which fan
+  signal it comes from, in plain words.
+- Keep place and brand names out of food and drink titles; credit them in the detail instead.
+- Every dish and drink must come from THIS audience's signals and THIS city. Don't fall back on drinks or snacks
+  you'd serve any crowd; if the evidence is thin, offer fewer items rather than generic ones.
+- headline: "<Headliner> in <City>: " followed by the two or three strongest taste signals in plain words.
+  No invented event titles.
+- Never use these words: soirée, vibe(s), curated, elevate(d), immersive, experience, journey, magical,
+  whimsical, ethereal, kawaii, unforgettable, sensory, harmonious, symphony.
+- run_of_show: steps in show order using phases (Doors, Support, Changeover, Headliner, Encore, After-show).
+  Never give clock times; the venue sets its own times.
 """
 
 
@@ -663,7 +706,10 @@ def validate(plan: Plan, pools: dict) -> tuple[Plan, list[dict]]:
                 continue
             names = [idx[i]["name"] for i in valid]
             if not any(norm(n) == norm(item.title) for n in names):
-                if norm(item.title).startswith(norm(names[0])):  # "ANRI – city pop warm-up": keep the note
+                if re.match(r"^\s*[–—:-]", item.title):  # the model wrote a ref as the name; it was stripped
+                    if not item.detail:
+                        item.detail = item.title.strip(" –—:-")
+                elif norm(item.title).startswith(norm(names[0])):  # "ANRI – city pop warm-up": keep the note
                     extra = SPLIT_RE.split(item.title, maxsplit=1)
                     if len(extra) == 2 and not item.detail:
                         item.detail = extra[1].strip()
@@ -688,7 +734,52 @@ def validate(plan: Plan, pools: dict) -> tuple[Plan, list[dict]]:
                 dropped.append({"section": section, "title": item.title,
                                 "reason": f"kept, but removed {len(unknown)} unknown evidence id(s)"})
                 item.evidence = [i for i in item.evidence if i in idx]
+            loose = [i for i in item.evidence if not explains(idx[i], item, section)]
+            if loose:
+                names = ", ".join(clean(idx[i]["name"]) for i in loose)
+                dropped.append({"section": section, "title": item.title,
+                                "reason": f"kept, but removed evidence that doesn't explain it ({names})"})
+                item.evidence = [i for i in item.evidence if i not in loose]
     return plan, dropped
+
+
+EVIDENCE_STOPWORDS = {"shop", "bar", "bars", "restaurant", "house", "place", "the", "and", "with", "food", "drink",
+                      "drinks", "classic", "style", "room", "lounge", "cafe", "new", "york", "city"}
+
+
+def _tokens(text: str) -> set[str]:
+    import unicodedata
+
+    text = re.sub(r"[\u2010-\u2015/_-]", " ", text or "")  # "Häagen‑Dazs" (non-breaking hyphen) -> two words
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
+    out = set()
+    for w in re.findall(r"[a-z0-9]+", text):
+        if len(w) < 3 or w in EVIDENCE_STOPWORDS:
+            continue
+        out.add(w[:-1] if w.endswith("s") and len(w) > 4 else w)  # balls -> ball, tacos -> taco
+    return out
+
+
+def explains(ent: dict, item: Item, section: str) -> bool:
+    """True when the cited tag or place plausibly explains a food or drink item.
+
+    A tag must share a word with the item and be the right kind (a drink signal for drinks, a dish or cuisine
+    signal for food). A place must be named in the item or share a word through one of its Qloo tags.
+    """
+    text = _tokens(f"{item.title} {item.detail}")
+    if ent.get("pool") == "tags":
+        if ent.get("kind") == "music":
+            return False
+        name = ent.get("name", "")
+        right_kind = is_drink(name) if section == "drinks" else not (is_drink(name) and not is_food(name))
+        return right_kind and bool(_tokens(name) & text)
+    if ent.get("pool") == "brands":
+        return bool(_tokens(ent.get("name", "")) & text)
+    if ent.get("pool") in ("eats", "bars"):
+        if _tokens(ent.get("name", "")) & text:
+            return True
+        return any(_tokens(t.get("name", "")) & text for t in ent.get("tags", []))
+    return False
 
 
 def ground_promo(plan: Plan, pools: dict, city: str) -> Plan:

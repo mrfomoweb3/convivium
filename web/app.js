@@ -15,6 +15,8 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const fixtureName = (s) => String(s || "").replace(/ \(fixture\)$/, "");
   const fmtAff = (a) => (typeof a === "number" ? a.toFixed(2) : "n/a");
+  // Similar-artist affinities cluster tightly (0.902 to 0.913), so show the third decimal there.
+  const fmtAff3 = (a) => (typeof a === "number" ? a.toFixed(3) : "n/a");
   const ARROW = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9.5M8.5 3.5 13 8l-4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   const img = (src, cls = "", alt = "") => (src ? `<img class="${cls}" src="${esc(src)}" alt="${esc(alt)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : "");
   const AGE = [["24_and_younger", "<25"], ["25_to_29", "25–29"], ["30_to_34", "30–34"], ["35_to_44", "35–44"], ["45_to_54", "45–54"], ["55_and_older", "55+"]];
@@ -73,10 +75,11 @@
   }
   const entsOf = (item, idx) => (item.evidence || []).map((id) => idx[id]).filter(Boolean);
 
-  function chip(ent, label) {
+  function chip(ent, label, precise = false) {
     const name = label || ent.name;
-    return `<button type="button" class="chip" data-eid="${esc(ent.id)}" aria-label="${esc(ent.name)}, Qloo affinity ${fmtAff(ent.affinity)}">
-      <span class="chip-label">${esc(name)}</span>${typeof ent.affinity === "number" ? `<span class="aff">${fmtAff(ent.affinity)}</span>` : ""}</button>`;
+    const aff = precise ? fmtAff3(ent.affinity) : fmtAff(ent.affinity);
+    return `<button type="button" class="chip" data-eid="${esc(ent.id)}" aria-label="${esc(ent.name)}, Qloo affinity ${aff}">
+      <span class="chip-label">${esc(name)}</span>${typeof ent.affinity === "number" ? `<span class="aff">${aff}</span>` : ""}</button>`;
   }
   const infer = (text = "inference") => `<span class="tag-infer">${esc(text)}</span>`;
 
@@ -94,7 +97,7 @@
     tip.innerHTML = `${ent.image ? `<img class="tip-img" src="${esc(ent.image)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}
       <strong>${esc(ent.name)}</strong>
       <div class="muted">${esc(POOL_LABEL[ent.pool] || ent.type)} from ${ent.source === "fixture" ? "offline fixtures" : "Qloo"}</div>
-      <div>Affinity ${fmtAff(ent.affinity)}${typeof ent.popularity === "number" ? `, popularity ${fmtAff(ent.popularity)}` : ""}</div>
+      <div>Affinity ${fmtAff3(ent.affinity)}${typeof ent.popularity === "number" ? `, popularity ${fmtAff(ent.popularity)}` : ""}</div>
       ${ent.address ? `<div class="muted">${esc(ent.address)}</div>` : ""}
       ${tags.length ? `<div class="muted">Tags: ${esc(tags.join(", "))}</div>` : ""}`;
     tip.hidden = false;
@@ -303,7 +306,7 @@
       </a>
       <div class="card blue float float-1">
         <div class="card-title">DJ set from Qloo <span class="muted">${dj.length} artists</span></div>
-        <ul class="float-list">${dj.slice(0, 3).map((e) => `<li><span class="name">${esc(fixtureName(e.name))}</span><span class="num">${fmtAff(e.affinity)}</span></li>`).join("")}</ul>
+        <ul class="float-list">${dj.slice(0, 3).map((e) => `<li><span class="name">${esc(fixtureName(e.name))}</span><span class="num">${fmtAff3(e.affinity)}</span></li>`).join("")}</ul>
       </div>
       <div class="card yellow float float-2">
         <div class="big-num">${top ? esc(AGE.find(([k]) => k === top)?.[1] || "") : "n/a"}</div>
@@ -311,7 +314,7 @@
         ${ageBars(demo)}
       </div>
       <div class="card green float float-3">
-        <div class="big-num">${affs.length ? fmtAff(Math.max(...affs)) : "n/a"}</div>
+        <div class="big-num">${affs.length ? fmtAff3(Math.max(...affs)) : "n/a"}</div>
         <div class="float-cap">Top fan affinity in the DJ set</div>
         ${spark(affs)}
         <div class="float-foot">Qloo affinity, artist by artist</div>
@@ -424,7 +427,7 @@
       const av = e && e.image ? img(e.image, "av") : `<span class="av ph" aria-hidden="true">${esc(name.charAt(0))}</span>`;
       return `<li>${av}<div><div class="song">${esc(name)}</div>
         ${i.detail && !/^Fans' affinity/.test(i.detail) ? `<div class="song-detail">${esc(i.detail)}</div>` : ""}
-        <div class="chips">${e ? chip(e, "Qloo") : infer()}</div></div></li>`;
+        <div class="chips">${e ? chip(e, "Qloo", true) : infer()}</div></div></li>`;
     }).join("")}</ol>` : `<p class="empty">Qloo returned no artists for these fans, so there's no DJ set to suggest.</p>`;
     return `<section class="card blue s-5 tall"><div class="card-title">DJ set between acts <span class="muted">${generic ? "guessed" : "artists these fans love"}</span></div>${body}</section>`;
   }

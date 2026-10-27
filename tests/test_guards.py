@@ -118,3 +118,35 @@ def test_renamed_dj_item_keeps_its_note():
     plan, dropped = validate(llm_style_plan(dj_set=[Item(title="Real Artist – warm-up set", evidence=["a1"])]), POOLS)
     assert plan.dj_set[0].title == "Real Artist" and plan.dj_set[0].detail == "warm-up set"
     assert not dropped or all(d["title"] != "Real Artist – warm-up set" for d in dropped if d["section"] == "dj_set")
+
+
+def test_evidence_must_explain_the_item():
+    pools = {**POOLS, "tags": POOLS["tags"] + [{"id": "t3", "name": "Coffee shop", "kind": "place", "affinity": 0.9}]}
+    plan = llm_style_plan(drinks=[Item(title="Citrus-mint mocktail", detail="Bright and fresh.", evidence=["t3"]),
+                                  Item(title="Cold brew coffee tonic", evidence=["t3"])])
+    plan, dropped = validate(plan, pools)
+    assert plan.drinks[0].evidence == []  # "Coffee shop" doesn't explain a citrus-mint mocktail
+    assert plan.drinks[1].evidence == ["t3"]
+    assert any("doesn't explain" in d["reason"] for d in dropped)
+
+
+def test_run_of_show_has_no_invented_clock_times():
+    from app.planner import _unalias
+
+    plan = _unalias(Plan(headline="h", audience_read="r",
+                         run_of_show=["7:30 pm – DJ warm-up", "10:00pm - After-show", "2 DJs trade sets"]), {})
+    assert plan.run_of_show == ["DJ warm-up", "After-show", "2 DJs trade sets"]
+
+
+def test_alcohol_check_reads_whole_words():
+    for soft in ("Ginger Lime Sparkler", "Ginger Beer Fizz", "Espresso shot cooler", "Cold brew poured over ice",
+                 "Zero-proof spritz"):
+        assert not is_alcoholic(Item(title=soft)), soft
+    for hard in ("Gin & tonic", "Mezcal smoke sour", "Rum punch", "Aperol spritz", "Craft beers"):
+        assert is_alcoholic(Item(title=hard)), hard
+
+
+def test_marketing_words_are_swapped_for_plain_ones():
+    from app.planner import plain
+
+    assert plain("A curated soirée with British vibe and seafood flair") == "A chosen night with British feel and seafood touch"

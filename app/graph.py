@@ -210,7 +210,7 @@ async def plan_node(state: State) -> dict:
     notes.append(f"Venue rules critic found {len(violations)} violation(s): " + " ".join(violations[:3])
                  if violations else "Venue rules critic found no violations.")
     return {"plan": plan.model_dump(), "composer": composer, "attempts": attempts,
-            "dropped": state.get("dropped", []) + dropped, "violations": violations, "notes": notes}
+            "dropped": dropped, "violations": violations, "notes": notes}
 
 
 def critic(state: State) -> str:
