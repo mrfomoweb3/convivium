@@ -82,3 +82,26 @@ async def test_fixture_names_and_ids_are_marked():
         assert e.name.endswith("(fixture)") and "fixture" in e.id
     for e in await client.fan_brands(["fixture-artist-x"]):
         assert e.name.endswith("(fixture)") and "fixture" in e.id
+
+
+def test_place_filters_drop_non_venues_and_far_places():
+    from app.qloo import Entity, is_hospitality, near_cluster
+
+    def place(name, genre, lat=40.72, lon=-74.0, closed=False):
+        return Entity(id=name, name=name, type="urn:entity:place", genre=f"urn:tag:genre:place:{genre}",
+                      lat=lat, lon=lon, closed=closed)
+
+    assert is_hospitality(place("Bar", "restaurant:bar")) and is_hospitality(place("Club", "live_music_venue"))
+    assert not is_hospitality(place("Mall", "shopping_mall")) and not is_hospitality(place("Yacht", "yacht_club"))
+    assert not is_hospitality(place("Shut", "restaurant", closed=True))
+    near = [place("a", "bar"), place("b", "bar", 40.73), place("c", "bar", 40.71), place("far", "bar", 42.3, -74.9)]
+    assert [e.name for e in near_cluster(near)] == ["a", "b", "c"]
+
+
+def test_real_tag_shapes_parse():
+    from app.qloo import parse_tags
+
+    tags = parse_tags({"results": {"tags": [{"tag_id": "urn:tag:genre:music:dream_pop", "name": " dream pop",
+                                             "subtype": "urn:tag:genre:music", "query": {"affinity": 0.98}}]}}, "qloo")
+    assert tags == [{"id": "urn:tag:genre:music:dream_pop", "name": "dream pop", "type": "urn:tag:genre:music",
+                     "affinity": 0.98, "source": "qloo"}]

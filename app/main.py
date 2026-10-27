@@ -164,9 +164,9 @@ async def status():
         "qloo_mode": get_client().mode, "llm": llm_label(), "memory": get_memory().backend,
         "watcher_enabled": s.watcher_enabled, "watch_interval_seconds": s.watch_interval_seconds,
         "email_configured": bool(s.resend_api_key), "webhook_configured": bool(s.webhook_url),
-        # CARTO dark tiles now need an API key; without one, use OSM tiles darkened in CSS.
+        # CARTO tiles now need an API key; without one, use OSM tiles muted in CSS.
         "map": {"url": s.map_tile_url, "attribution": s.map_tile_attribution} if s.map_tile_url else
-               {"url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png", "dark_filter": True,
+               {"url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png", "muted": True,
                 "attribution": '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'},
     }
 

@@ -75,9 +75,12 @@ async def probe(client: httpx.AsyncClient, artist: str, city: str, save: bool) -
                         "filter.tags": tags["restaurant"], "take": 12},
         "bars": {"filter.type": "urn:entity:place", **sig, "filter.location.query": city,
                  "filter.tags": tags["bar"], "take": 12},
-        "taste_tags": {"filter.type": "urn:tag", **sig, "take": 25},
+        "dish_tags": {"filter.type": "urn:tag", **sig, "filter.tag.types": "urn:tag:specialty_dish:place", "take": 15},
+        "place_tags": {"filter.type": "urn:tag", **sig, "filter.tag.types": "urn:tag:genre:place", "take": 25},
+        "music_tags": {"filter.type": "urn:tag", **sig, "filter.tag.types": "urn:tag:genre:music,urn:tag:style:qloo",
+                       "take": 15},
         "demographics": {"filter.type": "urn:demographics", **sig},
-        "heatmap": {"filter.type": "urn:heatmap", "filter.location.query": city, **sig, "take": 60},
+        "heatmap": {"filter.type": "urn:heatmap", "filter.location.query": city, **sig, "take": 50},
     }
     row = {"artist": artist, "city": city, "search": len(results), "resolved": ent.get("name"), "popularity": pop}
     for label, params in calls.items():
@@ -95,8 +98,8 @@ async def main() -> None:
                                  headers={"X-Api-Key": s.qloo_api_key}) as client:
         if "--coverage" in sys.argv:
             rows = [await probe(client, a, c, save=False) for a, c in DEMO]
-            keys = ["artist", "city", "resolved", "artists", "brands", "restaurants", "bars", "taste_tags",
-                    "demographics", "heatmap"]
+            keys = ["artist", "city", "resolved", "artists", "brands", "restaurants", "bars", "dish_tags",
+                    "place_tags", "music_tags", "demographics", "heatmap"]
             print("\t".join(keys))
             for r in rows:
                 print("\t".join(str(r.get(k, "-")) for k in keys))

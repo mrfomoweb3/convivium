@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import math
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Awaitable, Callable, TypeVar
@@ -61,6 +63,8 @@ class Entity:
     lat: float | None = None
     lon: float | None = None
     image: str = ""
+    genre: str = ""
+    closed: bool = False
     source: str = "qloo"
 
     def to_dict(self) -> dict:
@@ -89,16 +93,43 @@ def _results(payload: dict, key: str) -> list:
     return []
 
 
+# Entity tags worth keeping (places carry ~100 tags); earlier types sort first.
+TAG_PRIORITY = (
+    "cuisine", "beverage_offering", "menu_highlight", "specialty_dish", "genre:place", "category:place",
+    "genre:music", "style", "audience", "genre",
+)
+HOSPITALITY_WORDS = {
+    "restaurant", "cafe", "coffee", "bakery", "bar", "pub", "brewery", "brewpub", "winery", "tea", "dessert",
+    "cream", "food", "live", "night", "nightclub", "karaoke", "lounge", "beer", "wine", "cocktail", "bistro",
+    "diner", "izakaya", "taqueria", "pizzeria", "deli", "eatery", "canteen", "gastropub", "tavern", "saloon",
+    "juice", "patisserie", "brasserie", "trattoria", "cantina", "steakhouse", "noodle", "ramen", "sushi",
+}
+
+
+def _tag_rank(tag: dict) -> int:
+    t = tag.get("type", "")
+    for i, key in enumerate(TAG_PRIORITY):
+        if key in t:
+            return i
+    return len(TAG_PRIORITY)
+
+
 def normalise_entity(raw: dict, source: str) -> Entity:
     props = raw.get("properties") or {}
     loc = raw.get("location") or props.get("geocode") or {}
     image = props.get("image") or {}
     types = raw.get("types") or [raw.get("subtype") or raw.get("type") or ""]
-    tags = []
+    tags, seen = [], set()
     for t in raw.get("tags") or []:
-        if isinstance(t, dict):
-            tags.append({"id": t.get("id") or t.get("tag_id") or "", "name": t.get("name") or "",
-                         "type": t.get("type") or t.get("subtype") or ""})
+        if isinstance(t, dict) and t.get("name"):
+            tag = {"id": t.get("id") or t.get("tag_id") or "", "name": str(t["name"]).strip(),
+                   "type": t.get("type") or t.get("subtype") or ""}
+            if (tag["name"].lower(), tag["type"]) not in seen:
+                seen.add((tag["name"].lower(), tag["type"]))
+                tags.append(tag)
+    useful = sorted((t for t in tags if _tag_rank(t) < len(TAG_PRIORITY)), key=_tag_rank)
+    tags = useful or tags
+    genre = props.get("primary_genre") or {}
     address = props.get("address") or ""
     if isinstance(address, dict):
         address = ", ".join(str(v) for v in address.values() if v)
@@ -108,13 +139,54 @@ def normalise_entity(raw: dict, source: str) -> Entity:
         type=str(types[0] if types else ""),
         affinity=_num((raw.get("query") or {}).get("affinity")),
         popularity=_num(raw.get("popularity")),
-        tags=tags[:12],
+        tags=tags[:16],
         address=str(address),
         lat=_num(loc.get("lat", loc.get("latitude"))),
         lon=_num(loc.get("lon", loc.get("longitude"))),
-        image=str(image.get("url") or "") if isinstance(image, dict) else str(image or ""),
+        image=_image_url(image, props.get("images")),
+        genre=str(genre.get("id") or "") if isinstance(genre, dict) else str(genre),
+        closed=bool(props.get("is_closed")),
         source=source,
     )
+
+
+def _image_url(image, images) -> str:
+    """Artists and brands carry properties.image; places carry a properties.images list."""
+    if isinstance(image, dict) and image.get("url"):
+        return str(image["url"])
+    if isinstance(image, str) and image:
+        return image
+    for im in images or []:
+        if isinstance(im, dict) and im.get("url"):
+            return str(im["url"])
+    return ""
+
+
+def is_hospitality(e: Entity) -> bool:
+    """True for food and drink venues; drops malls, markets, schools and shops Qloo tags as places."""
+    if e.closed:
+        return False
+    if not e.genre:
+        return True
+    words = set(re.split(r"[:_]", e.genre.removeprefix("urn:tag:genre:place:")))
+    return bool(words & HOSPITALITY_WORDS)
+
+
+def near_cluster(entities: list[Entity], max_km: float = 30.0) -> list[Entity]:
+    """Drop places far from the median of the results (a city query can match a whole state)."""
+    located = [e for e in entities if e.lat is not None and e.lon is not None]
+    if len(located) < 3:
+        return entities
+    lats = sorted(e.lat for e in located)
+    lons = sorted(e.lon for e in located)
+    clat, clon = lats[len(lats) // 2], lons[len(lons) // 2]
+
+    def km(e: Entity) -> float:
+        dlat = math.radians(e.lat - clat)
+        dlon = math.radians(e.lon - clon) * math.cos(math.radians(clat))
+        return 6371 * math.hypot(dlat, dlon)
+
+    return [e for e in entities if e.lat is None or km(e) <= max_km]
 
 
 def parse_entities(payload: dict, source: str) -> list[Entity]:
@@ -130,8 +202,8 @@ def parse_tags(payload: dict, source: str) -> list[dict]:
         tid = r.get("id") or r.get("tag_id") or r.get("entity_id")
         if not tid or not r.get("name"):
             continue
-        out.append({"id": str(tid), "name": str(r["name"]),
-                    "type": str(r.get("type") or r.get("subtype") or ""),
+        out.append({"id": str(tid), "name": str(r["name"]).strip(),
+                    "type": str(r.get("subtype") or r.get("type") or ""),
                     "affinity": _num((r.get("query") or {}).get("affinity")), "source": source})
     return out
 
@@ -311,24 +383,35 @@ class QlooClient:
         params = {"filter.type": "urn:entity:brand", "signal.interests.entities": ",".join(ids), "take": take}
         return parse_entities(await self.insights(params, "Brands these fans over-index on"), self.data_source)
 
-    async def fan_places(self, ids: list[str], city: str, tag_id: str, label: str, take: int = 12) -> list[Entity]:
+    async def fan_places(self, ids: list[str], city: str, tag_id: str, label: str, take: int = 20) -> list[Entity]:
         params = {"filter.type": "urn:entity:place", "signal.interests.entities": ",".join(ids),
                   "filter.location.query": city, "filter.tags": tag_id, "take": take}
         return parse_entities(await self.insights(params, f"{label} in {city} these fans love"), self.data_source)
 
-    async def taste_tags(self, ids: list[str], take: int = 25) -> list[dict]:
-        params = {"filter.type": "urn:tag", "signal.interests.entities": ",".join(ids), "take": take}
-        return parse_tags(await self.insights(params, "Taste analysis: tags that describe this audience"),
-                          self.data_source)
+    async def taste_tags(self, ids: list[str], tag_types: str, purpose: str, kind: str,
+                         take: int = 15) -> list[dict]:
+        """Typed taste analysis. Untyped urn:tag results are mostly media keywords, so always pass types."""
+        params = {"filter.type": "urn:tag", "signal.interests.entities": ",".join(ids),
+                  "filter.tag.types": tag_types, "take": take}
+        tags = parse_tags(await self.insights(params, purpose), self.data_source)
+        out, seen = [], set()
+        for t in tags:  # Qloo returns near-duplicates like "k pop" and "Kpop"
+            key = re.sub(r"[^a-z0-9]", "", t["name"].lower())
+            if key and key not in seen:
+                seen.add(key)
+                out.append({**t, "kind": kind})
+        return out
 
     async def demographics(self, ids: list[str]) -> dict:
         params = {"filter.type": "urn:demographics", "signal.interests.entities": ",".join(ids)}
         return parse_demographics(await self.insights(params, "Audience age and gender skew"), self.data_source)
 
-    async def heatmap(self, ids: list[str], city: str, take: int = 60) -> list[dict]:
+    async def heatmap(self, ids: list[str], city: str, take: int = 50) -> list[dict]:
+        # take is capped at 50 by Qloo; it returns many geohash cells anyway, so keep the strongest.
         params = {"filter.type": "urn:heatmap", "filter.location.query": city,
-                  "signal.interests.entities": ",".join(ids), "take": take}
-        return parse_heatmap(await self.insights(params, f"Where in {city} these fans are"), self.data_source)
+                  "signal.interests.entities": ",".join(ids), "take": min(take, 50)}
+        points = parse_heatmap(await self.insights(params, f"Where in {city} these fans are"), self.data_source)
+        return sorted(points, key=lambda p: -(p["affinity"] or 0))[:take]
 
 
 async def safe(coro: Awaitable[T], default: T) -> T:

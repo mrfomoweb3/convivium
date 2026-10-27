@@ -42,7 +42,9 @@ def get_llm():
         if provider == "groq" and s.groq_api_key:
             from langchain_groq import ChatGroq
 
-            return ChatGroq(model=name, api_key=s.groq_api_key, max_tokens=4096, timeout=90, max_retries=2)
+            # Groq's free tier counts prompt + max_tokens against 8k tokens/minute, so keep both lean.
+            extra = {"reasoning_effort": "low"} if "gpt-oss" in name else {}
+            return ChatGroq(model=name, api_key=s.groq_api_key, max_tokens=2500, timeout=90, max_retries=2, **extra)
         if provider == "openai" and s.openai_api_key:
             from langchain_openai import ChatOpenAI
 

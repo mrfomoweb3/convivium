@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import operator
 import time
 import traceback
@@ -19,8 +20,9 @@ from .actions import run_actions
 from .llm import get_llm, llm_label
 from .memory import get_memory
 from .planner import (Plan, Policy, baseline_compose, check_policy, clean, deterministic_compose, enforce_policy,
-                      llm_compose, norm, validate)
-from .qloo import QlooAuthError, QlooError, current_trace, get_client, safe, start_trace
+                      ground_promo, llm_compose, norm, validate)
+from .qloo import (QlooAuthError, QlooError, current_trace, get_client, is_hospitality, near_cluster, safe,
+                   start_trace)
 
 log = logging.getLogger(__name__)
 MAX_ATTEMPTS = 3
@@ -91,6 +93,23 @@ def after_resolve(state: State):
     return END if state.get("error") else ["gather", "baseline"]
 
 
+def _near_places(points: list[dict], places: list, max_km: float = 40.0) -> list[dict]:
+    """A city heatmap can span a whole region; keep the cells around the city's fan places."""
+    located = [e for e in places if e.lat is not None and e.lon is not None]
+    if len(located) < 3:
+        return points
+    lats, lons = sorted(e.lat for e in located), sorted(e.lon for e in located)
+    clat, clon = lats[len(lats) // 2], lons[len(lons) // 2]
+
+    def km(p: dict) -> float:
+        dlat = math.radians(p["lat"] - clat)
+        dlon = math.radians(p["lon"] - clon) * math.cos(math.radians(clat))
+        return 6371 * math.hypot(dlat, dlon)
+
+    kept = [p for p in points if km(p) <= max_km]
+    return kept or points
+
+
 async def gather(state: State) -> dict:
     ctx, res = state["ctx"], state["resolved"]
     client = get_client()
@@ -98,8 +117,13 @@ async def gather(state: State) -> dict:
     city = ctx["city"]
     try:
         rest_tag, bar_tag = await asyncio.gather(client.find_tag("restaurant"), client.find_tag("bar"))
-        tags, demo, heat, artists, brands, eats, bars = await asyncio.gather(
-            safe(client.taste_tags(ids), []),
+        dishes, cuisines, music, demo, heat, artists, brands, eats, bars = await asyncio.gather(
+            safe(client.taste_tags(ids, "urn:tag:specialty_dish:place", "Taste analysis: dishes these fans love",
+                                   "dish"), []),
+            safe(client.taste_tags(ids, "urn:tag:genre:place", "Taste analysis: cuisines and kinds of places",
+                                   "place", take=25), []),
+            safe(client.taste_tags(ids, "urn:tag:genre:music,urn:tag:style:qloo",
+                                   "Taste analysis: music genres and style", "music"), []),
             safe(client.demographics(ids), {"age": {}, "gender": {}}),
             safe(client.heatmap(ids, city), []),
             safe(client.fan_artists(ids, res["headliner"].get("popularity")), []),
@@ -109,13 +133,26 @@ async def gather(state: State) -> dict:
         )
     except QlooAuthError as exc:
         return {"error": str(exc), "notes": [str(exc)], "pools": {}}
+    notes = []
+    removed = []
+    for label, group in (("restaurants", eats), ("bars", bars)):
+        kept = near_cluster([e for e in group if is_hospitality(e)])
+        removed += [e.name for e in group if e not in kept]
+        if label == "restaurants":
+            eats = kept[:12]
+        else:
+            bars = kept[:12]
+    heat = _near_places(heat, eats + bars)
     pools = {
         "artists": [e.to_dict() for e in artists], "brands": [e.to_dict() for e in brands],
         "eats": [e.to_dict() for e in eats], "bars": [e.to_dict() for e in bars],
-        "tags": tags, "demographics": demo, "heatmap": heat,
+        "tags": dishes + cuisines + music, "demographics": demo, "heatmap": heat,
     }
+    if removed:
+        notes.append(f"Set aside {len(removed)} place(s) that are closed, not food or drink venues, or far outside "
+                     f"{city}: " + ", ".join(sorted(set(removed))[:6]) + ("…" if len(set(removed)) > 6 else "") + ".")
     counts = {k: len(v) for k, v in pools.items() if isinstance(v, list)}
-    notes = ["Gathered Qloo evidence: " + ", ".join(f"{v} {k}" for k, v in counts.items()) + "."]
+    notes = ["Gathered Qloo evidence: " + ", ".join(f"{v} {k}" for k, v in counts.items()) + "."] + notes
     gaps = [k for k, v in counts.items() if v == 0]
     if gaps:
         notes.append("Qloo returned nothing for: " + ", ".join(gaps)
@@ -148,11 +185,20 @@ async def plan_node(state: State) -> dict:
     plan: Plan | None = None
     if llm is not None:
         try:
-            plan = await llm_compose(llm, ctx, policy, pools, lessons, state.get("memory_text", []),
-                                     state.get("violations", []) if attempts > 1 else [])
+            feedback = state.get("violations", []) if attempts > 1 else []
+            try:
+                plan = await llm_compose(llm, ctx, policy, pools, lessons, state.get("memory_text", []), feedback)
+            except Exception as exc:  # one retry when the model's output didn't match the schema
+                if "tool_use_failed" not in str(exc) and "validation" not in str(exc).lower():
+                    raise
+                notes.append("The LLM's first answer didn't match the plan schema; asked again.")
+                plan = await llm_compose(llm, ctx, policy, pools, lessons, state.get("memory_text", []), feedback)
             composer = f"llm:{llm_label()}"
         except Exception as exc:
-            notes.append(f"The LLM composer failed ({exc.__class__.__name__}); using the deterministic composer.")
+            reason = "hit the provider's rate limit" if "rate_limit" in str(exc) or "429" in str(exc) or "413" in str(
+                exc) else f"failed ({exc.__class__.__name__})"
+            log.warning("LLM composer error: %s", str(exc)[:500])
+            notes.append(f"The LLM composer {reason}; using the deterministic composer for this draft.")
             plan = None
     if plan is None:
         plan = deterministic_compose(ctx, policy, pools, lessons)
@@ -161,8 +207,8 @@ async def plan_node(state: State) -> dict:
     notes.append(f"Draft {attempts} written by the {composer} composer.")
     if dropped:
         notes.append(f"Grounding guard changed {len(dropped)} item(s) without valid Qloo evidence.")
-    notes.append(f"Venue rules critic found {len(violations)} violation(s)." if violations
-                 else "Venue rules critic found no violations.")
+    notes.append(f"Venue rules critic found {len(violations)} violation(s): " + " ".join(violations[:3])
+                 if violations else "Venue rules critic found no violations.")
     return {"plan": plan.model_dump(), "composer": composer, "attempts": attempts,
             "dropped": state.get("dropped", []) + dropped, "violations": violations, "notes": notes}
 
@@ -181,6 +227,7 @@ async def finalize(state: State) -> dict:
     plan, fixes = enforce_policy(Plan(**state["plan"]), Policy(**state["policy"]), state["lessons"],
                                  state["pools"], state["ctx"])
     plan, dropped = validate(plan, state["pools"])
+    plan = ground_promo(plan, state["pools"], state["ctx"]["city"])
     remaining = check_policy(plan, Policy(**state["policy"]), state["lessons"])
     notes = [f"Rule fixer made {len(fixes)} change(s)." if fixes else "No rule fixes needed."]
     if remaining:

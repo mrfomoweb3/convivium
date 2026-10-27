@@ -25,14 +25,16 @@ class Item(BaseModel):
 class Plan(BaseModel):
     headline: str = Field(description="Short, specific title for the night")
     audience_read: str = Field(description="At most two sentences interpreting demographics and tags")
-    food: list[Item]
-    drinks: list[Item]
-    non_alcoholic_share_pct: int = Field(ge=0, le=100)
-    dj_set: list[Item]
-    brands: list[Item]
-    after_show: list[Item]
-    promo_focus: list[str]
-    run_of_show: list[str]
+    # Lists default to empty so a model that skips a section doesn't fail the whole draft;
+    # the guards refill grounded sections from the Qloo pools.
+    food: list[Item] = Field(default_factory=list)
+    drinks: list[Item] = Field(default_factory=list)
+    non_alcoholic_share_pct: int = Field(default=25, ge=0, le=100)
+    dj_set: list[Item] = Field(default_factory=list)
+    brands: list[Item] = Field(default_factory=list)
+    after_show: list[Item] = Field(default_factory=list)
+    promo_focus: list[str] = Field(default_factory=list)
+    run_of_show: list[str] = Field(default_factory=list)
 
 
 class Policy(BaseModel):
@@ -54,8 +56,20 @@ FOOD_WORDS = (
     "steak", "sandwich", "bagel", "donut", "doughnut", "kebab", "falafel", "pho", "banh mi", "poke", "vegan",
     "vegetarian", "west african", "nigerian", "caribbean", "jerk", "dim sum", "izakaya", "yakitori", "tapas",
     "empanada", "arepa", "ceviche", "shawarma", "biryani", "kimchi", "bibimbap", "gyoza", "onigiri", "crepe",
-    "croissant", "gelato", "churro", "hot dog", "fries", "diner", "cafe", "snack", "spicy", "chili",
+    "croissant", "gelato", "churro", "hot dog", "fries", "chili", "european", "american", "british",
+    "breakfast", "latin", "asian", "african", "spanish", "greek", "turkish", "lebanese", "vietnamese", "chinese",
+    "peruvian", "brazilian", "german", "souffle", "soufflé", "tartare", "oyster", "bread", "meatball", "rice ball",
+    "pasta", "neapolitan", "sicilian", "baked goods", "cake", "small plates", "bar fare", "pub fare", "noodles",
+    "dessert", "pie", "tapas", "mezze", "bbq", "grill", "kebab", "sandwich", "salad", "vegan", "seafood",
 )
+# Real but broad cuisines: rank below the fans' specific dishes.
+BROAD_CUISINES = {"american", "new american", "european", "international", "contemporary", "fusion", "modern",
+                  "continental", "western", "global", "eclectic"}
+# Too generic to build a concept on.
+GENERIC_TASTES = {
+    "classic", "food", "full bar", "spirits", "soft drinks", "snacks", "bar food", "restaurant", "bar", "place",
+    "hard liquor", "alcohol", "specialty non alcoholic", "drinks", "beverages", "coffee and tea", "quick bite",
+}
 DRINK_WORDS = (
     "coffee", "tea", "matcha", "wine", "beer", "ale", "ipa", "cocktail", "mezcal", "tequila", "spritz",
     "kombucha", "soda", "juice", "horchata", "aguas frescas", "agua fresca", "energy drink", "whisk", "gin",
@@ -151,16 +165,18 @@ def empty_lessons() -> dict:
 
 # ---- evidence-derived building blocks ----------------------------------------
 
+def _blocked(label: str, lessons: dict) -> bool:
+    return norm(label) in GENERIC_TASTES or any(matches(f, label) for f in lessons.get("flopped", []))
+
+
 def food_candidates(pools: dict, lessons: dict) -> list[dict]:
-    """Cuisine/food signals ranked by summed affinity, from taste tags and restaurant tags."""
+    """Food signals ranked by summed affinity: dish and cuisine taste tags, plus restaurants' cuisine tags."""
     found: dict[str, dict] = {}
 
     def add(label: str, score: float, ev: str, place: str = "") -> None:
         label = clean(label)
         key = norm(label)
-        if not key or key in {"restaurant", "bar", "place", "food"}:
-            return
-        if any(matches(f, label) for f in lessons.get("flopped", [])):
+        if not key or _blocked(label, lessons):
             return
         c = found.setdefault(key, {"label": label, "score": 0.0, "evidence": [], "place": ""})
         c["score"] += score
@@ -169,24 +185,53 @@ def food_candidates(pools: dict, lessons: dict) -> list[dict]:
         c["place"] = c["place"] or place
 
     for t in pools.get("tags", []):
-        if is_food(t["name"]) and not is_drink(t["name"]):
+        kind = t.get("kind")
+        if kind == "music":
+            continue
+        if kind == "dish" or ((kind in (None, "place")) and is_food(t["name"]) and not is_drink(t["name"])):
             add(t["name"], t.get("affinity") or 0.5, t["id"])
     for e in pools.get("eats", []):
         for t in e.get("tags", []):
-            tid, name = t.get("id", ""), t.get("name", "")
-            if ("category:place" in tid) and not ("restaurant:" in tid):
-                continue
-            if ":restaurant:" in tid or "genre:place" in tid or "cuisine" in tid or is_food(name):
-                add(name, e.get("affinity") or 0.5, e["id"], e["name"])
+            tid, ttype = t.get("id", ""), t.get("type", "")
+            if any(k in ttype for k in ("cuisine", "menu_highlight", "specialty_dish")) or ":restaurant:" in tid:
+                if not is_drink(t.get("name", "")):
+                    add(t.get("name", ""), (e.get("affinity") or 0.5) * 0.15, e["id"], e["name"])
+    for c in found.values():
+        if norm(c["label"]) in BROAD_CUISINES:
+            c["score"] *= 0.3
     return sorted(found.values(), key=lambda c: -c["score"])
 
 
 def drink_candidates(pools: dict, lessons: dict) -> list[dict]:
-    out = []
+    """Drink signals: drink-related taste tags, plus what the fans' favourite bars are known for pouring."""
+    found: dict[str, dict] = {}
+
+    def add(label: str, score: float, ev: str) -> None:
+        label = re.sub(r"\s+(shop|bar|house|lounge|room)$", "", clean(label), flags=re.IGNORECASE)
+        key = norm(label)
+        if not key or _blocked(label, lessons):
+            return
+        c = found.setdefault(key, {"label": label, "score": 0.0, "affinity": score, "evidence": []})
+        c["score"] += score
+        if ev not in c["evidence"]:
+            c["evidence"].append(ev)
+
     for t in pools.get("tags", []):
-        if is_drink(t["name"]) and not any(matches(f, t["name"]) for f in lessons.get("flopped", [])):
-            out.append({"label": clean(t["name"]), "affinity": t.get("affinity"), "evidence": [t["id"]]})
-    return out
+        if t.get("kind") != "music" and is_drink(t["name"]):
+            add(t["name"], t.get("affinity") or 0.5, t["id"])
+    for b in pools.get("bars", []):
+        for t in b.get("tags", []):
+            if any(k in t.get("type", "") for k in ("beverage_offering", "offerings")) and is_drink(t.get("name", "")):
+                add(t["name"], (b.get("affinity") or 0.5) * 0.5, b["id"])
+    return sorted(found.values(), key=lambda c: -c["score"])
+
+
+def music_tags(pools: dict) -> list[str]:
+    tags = [t for t in pools.get("tags", []) if t.get("kind") == "music"]
+    tags.sort(key=lambda t: 0 if "genre" in t.get("type", "") else 1)  # "dream pop" before "Melodious"
+    if not tags:  # older pools or fixtures without kinds
+        tags = [t for t in pools.get("tags", []) if not is_food(t["name"]) and not is_drink(t["name"])]
+    return [clean(t["name"]).lower() for t in tags]
 
 
 def young_skew(demo: dict) -> float:
@@ -249,24 +294,37 @@ def add_dietary(items: list[Item], policy: Policy, cands: list[dict]) -> list[st
 
 def make_drinks(pools: dict, policy: Policy, lessons: dict) -> list[Item]:
     cands = drink_candidates(pools, lessons)
+    soft = [c for c in cands if not _has_word(c["label"], ALCOHOL_WORDS)]
     items: list[Item] = []
-    first = cands[0] if cands else None
-    items.append(Item(
-        title=f"Zero-proof {first['label'].lower()} signature" if first else "Zero-proof house signature",
-        detail="Non-alcoholic signature drink, priced and garnished like the headline cocktail.",
-        evidence=first["evidence"] if first else [],
-    ))
-    for c in cands[1:3] if first else []:
+    if soft:
+        items.append(Item(title=f"Zero-proof {soft[0]['label'].lower()} signature",
+                          detail="Non-alcoholic signature drink, priced and garnished like the headline cocktail.",
+                          evidence=soft[0]["evidence"][:3]))
+    else:
+        items.append(Item(title="Zero-proof house signature",
+                          detail="Non-alcoholic signature drink, priced and garnished like the headline cocktail."
+                                 + (f" Built to sit beside the {cands[0]['label'].lower()} these fans' bars pour."
+                                    if cands else ""),
+                          evidence=cands[0]["evidence"][:2] if cands else []))
+    used = {norm(soft[0]["label"])} if soft else set()
+    for c in cands:
+        if len(items) >= 3:
+            break
+        if norm(c["label"]) in used:
+            continue
+        used.add(norm(c["label"]))
         label = c["label"].lower()
+        cap = c["label"][:1].upper() + c["label"][1:]
         if policy.no_alcohol:
-            items.append(Item(title=f"Zero-proof {label} cooler", detail=f"Qloo ties these fans to {label}.",
-                              evidence=c["evidence"]))
+            if _has_word(label, ALCOHOL_WORDS):
+                title = f"Zero-proof take on {label}"
+            else:
+                title = f"Zero-proof {label} cooler"
         elif _has_word(label, ALCOHOL_WORDS):
-            items.append(Item(title=f"{c['label'][:1].upper() + c['label'][1:]} feature pour",
-                              detail=f"Qloo ties these fans to {label}.", evidence=c["evidence"]))
+            title = f"{cap} list picked for this crowd"
         else:
-            items.append(Item(title=f"{c['label'][:1].upper() + c['label'][1:]} highball",
-                              detail=f"Qloo ties these fans to {label}.", evidence=c["evidence"]))
+            title = f"{cap} highball"
+        items.append(Item(title=title, detail=f"Qloo ties these fans to {label}.", evidence=c["evidence"][:3]))
     bars = [b for b in pools.get("bars", []) if not any(matches(d, b["name"]) for d in lessons.get("declined", []))]
     if bars:
         b = bars[0]
@@ -299,7 +357,8 @@ def make_partners(pools: dict, policy: Policy, lessons: dict, exclude: set[str] 
             merged.append(bars.pop(0))
         if eats:
             merged.append(eats.pop(0))
-    merged = [e for e in merged if e["id"] not in exclude]
+    seen: set[str] = set()
+    merged = [e for e in merged if e["id"] not in exclude and not (e["id"] in seen or seen.add(e["id"]))]
 
     def detail(e: dict) -> str:
         kind = "bar" if e in pools.get("bars", []) else "restaurant"
@@ -310,25 +369,29 @@ def make_partners(pools: dict, policy: Policy, lessons: dict, exclude: set[str] 
 
 
 def promo_bullets(pools: dict, city: str, n: int = 4) -> list[str]:
-    points = sorted(pools.get("heatmap", []), key=lambda p: -(p.get("affinity") or 0))
     places = [e for e in pools.get("eats", []) + pools.get("bars", []) if e.get("lat") is not None]
+    points = sorted(pools.get("heatmap", []), key=lambda p: -(p.get("affinity") or 0))
+    if len(places) >= 3:  # a city query can return cells across the whole region; keep the city's
+        lats, lons = sorted(e["lat"] for e in places), sorted(e["lon"] for e in places)
+        centre = (lats[len(lats) // 2], lons[len(lons) // 2])
+        points = [p for p in points if _haversine_km((p["lat"], p["lon"]), centre) <= 30]
     out, seen, named = [], set(), set()
     for p in points:
         cell = (round(p["lat"], 2), round(p["lon"], 2))
         if cell in seen:
             continue
         seen.add(cell)
-        if places:
-            near = min(places, key=lambda e: _haversine_km((p["lat"], p["lon"]), (e["lat"], e["lon"])))
+        near = min(places, key=lambda e: _haversine_km((p["lat"], p["lon"]), (e["lat"], e["lon"]))) if places else None
+        km = _haversine_km((p["lat"], p["lon"]), (near["lat"], near["lon"])) if near else 99.0
+        if near and km <= 3:
             if near["id"] in named:  # one bullet per landmark; the next hotspot must be somewhere else
                 continue
             named.add(near["id"])
-            km = _haversine_km((p["lat"], p["lon"]), (near["lat"], near["lon"]))
             out.append(f"Fan hotspot near {near['name']} (affinity {_aff(p.get('affinity'))}, {km:.1f} km away): "
                        f"posters, flyers and geo-targeted ads here.")
         else:
-            out.append(f"Fan hotspot at {p['lat']:.3f}, {p['lon']:.3f} (affinity {_aff(p.get('affinity'))}): "
-                       f"posters and geo-targeted ads here.")
+            out.append(f"Fan hotspot around {p['lat']:.3f}, {p['lon']:.3f} (affinity {_aff(p.get('affinity'))}): "
+                       f"geo-targeted ads here.")
         if len(out) >= n:
             break
     if not out:
@@ -349,7 +412,8 @@ def audience_read(pools: dict) -> str:
         f, m = g.get("female", 0), g.get("male", 0)
         if abs(f - m) > 0.2:
             parts.append("leans female" if f > m else "leans male")
-    tags = [clean(t["name"]).lower() for t in pools.get("tags", [])[:3]]
+    food = food_candidates(pools, empty_lessons())
+    tags = music_tags(pools)[:2] + ([food[0]["label"].lower()] if food else [])
     first = ("This crowd " + " and ".join(parts) + ".") if parts else "Qloo shows no strong age or gender skew."
     second = f" Their tastes run to {', '.join(tags[:-1])} and {tags[-1]}." if len(tags) > 1 else ""
     return first + second
@@ -386,9 +450,15 @@ def deterministic_compose(ctx: dict, policy: Policy, pools: dict, lessons: dict)
                            lambda e: f"Brand these fans over-index on (affinity {_aff(e.get('affinity'))}).",
                            skip_declined=True)
     partners = make_partners(pools, policy, lessons)
-    top = [clean(t["name"]).lower() for t in pools.get("tags", [])[:2]]
-    headline = (f"A {' and '.join(top)} night for {ctx['headliner']} fans" if top
-                else f"{ctx['headliner']} in {ctx['city']}: the night around the show")
+    music = music_tags(pools)
+    fc = food_candidates(pools, lessons)
+    if music and fc:
+        headline = f"{music[0][:1].upper() + music[0][1:]} and {fc[0]['label'].lower()} for {ctx['headliner']} fans"
+    elif music:
+        headline = f"A {music[0]} night for {ctx['headliner']} fans"
+    else:
+        headline = f"{ctx['headliner']} in {ctx['city']}: the night around the show"
+
     parts = {"dj_set": dj, "drinks": drinks, "after_show": partners, "brands": brands}
     return Plan(
         headline=headline,
@@ -404,26 +474,70 @@ def deterministic_compose(ctx: dict, policy: Policy, pools: dict, lessons: dict)
     )
 
 
-def compact_pools(pools: dict, per_pool: int = 12) -> dict:
-    def ent(e: dict) -> dict:
-        d = {"id": e["id"], "name": e["name"], "affinity": e.get("affinity")}
+def compact_pools(pools: dict, per_pool: int = 8, tags_per_kind: int = 8) -> tuple[dict, dict[str, str]]:
+    """A small view of the evidence for the LLM, with short refs (A1, B2, …) standing in for Qloo ids.
+
+    Returns (payload, ref_to_id). Short refs keep the prompt inside small token budgets and make
+    invented ids easy to catch: any ref that isn't in the map is dropped by ``validate``.
+    """
+    refs: dict[str, str] = {}
+
+    def ref(prefix: str, n: int, qid: str) -> str:
+        r = f"{prefix}{n}"
+        refs[r] = qid
+        return r
+
+    def ent(prefix: str, e: dict, n: int) -> dict:
+        d = {"ref": ref(prefix, n, e["id"]), "name": e["name"]}
+        if isinstance(e.get("affinity"), (int, float)):
+            d["aff"] = round(e["affinity"], 2)
         if e.get("tags"):
-            d["tags"] = [t["name"] for t in e["tags"][:4]]
-        if e.get("address"):
-            d["address"] = e["address"]
+            d["tags"] = [t["name"] for t in e["tags"][:3]]
         return d
 
-    heat = sorted(pools.get("heatmap", []), key=lambda p: -(p.get("affinity") or 0))[:5]
-    return {
-        "artists": [ent(e) for e in pools.get("artists", [])[:per_pool]],
-        "brands": [ent(e) for e in pools.get("brands", [])[:per_pool]],
-        "eats": [ent(e) for e in pools.get("eats", [])[:per_pool]],
-        "bars": [ent(e) for e in pools.get("bars", [])[:per_pool]],
-        "tags": [{"id": t["id"], "name": t["name"], "affinity": t.get("affinity")}
-                 for t in pools.get("tags", [])[:per_pool * 2]],
-        "demographics": {k: v for k, v in (pools.get("demographics") or {}).items() if k != "source"},
-        "heatmap_top_points": [{"lat": p["lat"], "lon": p["lon"], "affinity": p.get("affinity")} for p in heat],
-    }
+    payload: dict[str, Any] = {}
+    for key, prefix in (("artists", "A"), ("brands", "B"), ("eats", "R"), ("bars", "S")):
+        payload[key] = [ent(prefix, e, i) for i, e in enumerate(pools.get(key, [])[:per_pool], 1)]
+    tags, counts, n = [], {}, 0
+    for t in pools.get("tags", []):
+        kind = t.get("kind", "")
+        if counts.get(kind, 0) >= tags_per_kind:
+            continue
+        counts[kind] = counts.get(kind, 0) + 1
+        n += 1
+        tags.append({"ref": ref("T", n, t["id"]), "name": t["name"], "kind": kind,
+                     "aff": round(t["affinity"], 2) if isinstance(t.get("affinity"), (int, float)) else None})
+    payload["tags"] = tags
+    demo = pools.get("demographics") or {}
+    payload["demographics"] = {"age": demo.get("age", {}), "gender": demo.get("gender", {})}
+    return payload, refs
+
+
+REF_RE = re.compile(r"\s*[\(\[]?\b[ABRST]\d{1,3}\b(?:\s*(?:[+,&/]|and)\s*\b[ABRST]\d{1,3}\b)*[\)\]]?")
+SPLIT_RE = re.compile(r"\s+[–—-]\s+|:\s+")
+
+
+def strip_refs(text: str) -> str:
+    """Remove prompt refs like 'T5 + T4' or '(A3)' that a model copied into prose."""
+    text = REF_RE.sub("", text or "")
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+    text = re.sub(r"[,;\s–—-]+$", "", text.strip())
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def _unalias(plan: Plan, refs: dict[str, str]) -> Plan:
+    for section in ("food", "drinks", "dj_set", "brands", "after_show"):
+        for item in getattr(plan, section):
+            item.evidence = [refs.get(str(e).strip(), str(e)) for e in item.evidence]
+            item.title, item.detail = strip_refs(item.title), strip_refs(item.detail)
+            if not item.detail and section in CREATIVE_SECTIONS:  # "Name – description" in the title
+                parts = SPLIT_RE.split(item.title, maxsplit=1)
+                if len(parts) == 2 and len(parts[0]) >= 3:
+                    item.title, item.detail = parts[0].strip(), parts[1].strip()[:1].upper() + parts[1].strip()[1:]
+    plan.headline, plan.audience_read = strip_refs(plan.headline), strip_refs(plan.audience_read)
+    plan.promo_focus = [strip_refs(x) for x in plan.promo_focus]
+    plan.run_of_show = [strip_refs(x) for x in plan.run_of_show]
+    return plan
 
 
 SYSTEM_PROMPT = """You are Convivium, an agent that plans the whole night around a concert for a venue team:
@@ -431,14 +545,18 @@ food, drinks, the DJ set between acts, brand moments, after-show partners, promo
 
 Hard rules:
 - Use ONLY the evidence pools provided. Every item in dj_set, brands and after_show must use the exact entity
-  name from the pool and cite its id in `evidence` (dj_set from artists, brands from brands, after_show from
-  eats or bars). Never invent artist, brand or venue names. Items without a valid id are deleted.
-- food and drinks are creative concepts. Ground them in tags and places, and cite the ids that inspired them.
+  name from the pool and cite its ref (like "A3") in `evidence` (dj_set from artists A*, brands from brands B*,
+  after_show from eats R* or bars S*). Never invent artist, brand or venue names. Items without a valid ref
+  are deleted.
+- food and drinks are creative concepts. Ground them in tags (T*) and places, and cite the refs that inspired
+  them. Tag kinds: dish = dishes the fans love, place = cuisines and kinds of places, music = genres and style.
 - Respect every venue rule and apply the past lessons (never re-use declined partners or flopped items).
 - Being generic (plain burgers, generic lager, "top 40 hits") counts as failure unless the evidence points there.
 - audience_read is at most two sentences of interpretation grounded in the demographics and tags.
+- Every item has a short `title` (a name, at most 6 words) and a one-sentence `detail` saying why it fits these
+  fans. Refs go ONLY in `evidence`, never in title, detail or any other text.
 - Use 6-10 dj_set items, 2-3 brands, 3-5 food items, 3-5 drinks (always include a non-alcoholic signature),
-  3-4 promo_focus bullets that use the heatmap and nearby places, and 5-7 run_of_show steps.
+  2 promo_focus ideas (the agent adds Qloo heatmap hotspots itself), and 5-7 run_of_show steps.
 - Support human creatives: write as suggestions for the venue's chefs, bartenders and DJs, not replacements.
 """
 
@@ -467,16 +585,18 @@ def _rules_text(policy: Policy, lessons: dict) -> str:
 async def llm_compose(llm, ctx: dict, policy: Policy, pools: dict, lessons: dict, memory_text: list[str],
                       feedback: list[str]) -> Plan:
     show = {k: ctx.get(k) for k in ("headliner", "support", "city", "venue_name", "date") if ctx.get(k)}
+    compact, refs = compact_pools(pools)
     msg = (
         f"The show:\n{json.dumps(show, ensure_ascii=False)}\n\n"
         f"Venue rules and lessons:\n{_rules_text(policy, lessons)}\n\n"
         + (f"Venue memory:\n- " + "\n- ".join(memory_text[:6]) + "\n\n" if memory_text else "")
-        + f"Evidence pools from Qloo (compact):\n{json.dumps(compact_pools(pools), ensure_ascii=False)}\n"
+        + f"Evidence pools from Qloo (compact; cite refs):\n{json.dumps(compact, ensure_ascii=False)}\n"
     )
     if feedback:
         msg += "\nYour previous draft broke these rules. Fix every one:\n- " + "\n- ".join(feedback)
     structured = llm.with_structured_output(Plan)
-    return await structured.ainvoke([("system", SYSTEM_PROMPT), ("human", msg)])
+    plan = await structured.ainvoke([("system", SYSTEM_PROMPT), ("human", msg)])
+    return _unalias(plan, refs)
 
 
 GENERIC_BASELINE = {
@@ -543,8 +663,13 @@ def validate(plan: Plan, pools: dict) -> tuple[Plan, list[dict]]:
                 continue
             names = [idx[i]["name"] for i in valid]
             if not any(norm(n) == norm(item.title) for n in names):
-                dropped.append({"section": section, "title": item.title,
-                                "reason": f"renamed to the cited Qloo entity '{names[0]}'"})
+                if norm(item.title).startswith(norm(names[0])):  # "ANRI – city pop warm-up": keep the note
+                    extra = SPLIT_RE.split(item.title, maxsplit=1)
+                    if len(extra) == 2 and not item.detail:
+                        item.detail = extra[1].strip()
+                else:
+                    dropped.append({"section": section, "title": item.title,
+                                    "reason": f"renamed to the cited Qloo entity '{names[0]}'"})
                 item.title = names[0]
             item.evidence = valid
             kept.append(item)
@@ -564,6 +689,16 @@ def validate(plan: Plan, pools: dict) -> tuple[Plan, list[dict]]:
                                 "reason": f"kept, but removed {len(unknown)} unknown evidence id(s)"})
                 item.evidence = [i for i in item.evidence if i in idx]
     return plan, dropped
+
+
+def ground_promo(plan: Plan, pools: dict, city: str) -> Plan:
+    """Lead promo with Qloo heatmap hotspots; keep at most two of the composer's own ideas after them."""
+    hotspots = promo_bullets(pools, city)
+    # The composer's own ideas are inference; drop any that claim to be heatmap data.
+    extra = [p for p in plan.promo_focus
+             if p and p not in hotspots and not re.search(r"heat\s*map|hotspot", p, re.IGNORECASE)]
+    plan.promo_focus = hotspots + extra[:2]
+    return plan
 
 
 def check_policy(plan: Plan, policy: Policy, lessons: dict) -> list[str]:

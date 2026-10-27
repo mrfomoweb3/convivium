@@ -94,3 +94,27 @@ def test_young_audience_bumps_na_share_within_bounds():
     plan = deterministic_compose(CTX, Policy(), POOLS, empty_lessons())
     assert 25 < plan.non_alcoholic_share_pct <= 45
     assert any(i.title.lower().startswith("zero-proof") for i in plan.drinks)
+
+
+def test_prompt_refs_never_leak_into_text():
+    from app.planner import _unalias, strip_refs
+
+    assert strip_refs("Use the Museum (T14) foot traffic, T5 + T4") == "Use the Museum foot traffic"
+    plan = _unalias(Plan(headline="h", audience_read="r",
+                         food=[Item(title="Chocolate Soufflé Cups – airy, rich, T2 + T3", evidence=["T2", "Z9"])]),
+                    {"T2": "real-id"})
+    assert plan.food[0].title == "Chocolate Soufflé Cups" and plan.food[0].detail == "Airy, rich"
+    assert plan.food[0].evidence == ["real-id", "Z9"]  # unknown refs stay and get stripped by validate
+
+
+def test_partial_llm_plan_is_accepted_and_refilled():
+    plan = Plan(headline="h", audience_read="r", dj_set=[Item(title="Real Artist", evidence=["a1"])])
+    plan, _ = validate(plan, POOLS)
+    fixed, _ = enforce_policy(plan, Policy(max_partners=2), empty_lessons(), POOLS, CTX)
+    assert len(fixed.after_show) == 2 and fixed.food and fixed.drinks
+
+
+def test_renamed_dj_item_keeps_its_note():
+    plan, dropped = validate(llm_style_plan(dj_set=[Item(title="Real Artist – warm-up set", evidence=["a1"])]), POOLS)
+    assert plan.dj_set[0].title == "Real Artist" and plan.dj_set[0].detail == "warm-up set"
+    assert not dropped or all(d["title"] != "Real Artist – warm-up set" for d in dropped if d["section"] == "dj_set")

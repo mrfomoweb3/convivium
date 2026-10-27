@@ -39,9 +39,9 @@ MOODS = [
         "key": "soft",
         "artists": ["Velvet Hour", "Cloudline Trio", "Marigold Lane", "June Harbour", "Paper Lanterns",
                     "Sora Quartet", "Linden & Moss", "The Quiet Orchard", "Ada Winterfield", "Glasshouse Choir"],
-        "tags": [("jazz-pop", "genre"), ("bossa nova", "genre"), ("matcha", "keyword"), ("pastry", "keyword"),
-                 ("natural wine", "keyword"), ("vinyl collecting", "keyword"), ("tea ceremony", "keyword"),
-                 ("bookish", "keyword"), ("brunch", "keyword"), ("chamber pop", "genre")],
+        "music": ["jazz pop", "bossa nova", "chamber pop", "dream pop"],
+        "dishes": ["Chocolate souffle", "Pastry", "Brunch", "Croissant"],
+        "drinks": ["Matcha", "Natural wine", "Tea house"],
         "brands": ["Lumen Tea Co", "Fernleaf Bakery Goods", "Orchard Notebook", "Halcyon Audio"],
         "eats": ["Petal & Crumb", "Kettle House", "Morning Tide Cafe", "Little Ember Bistro", "Sakura Lane Kitchen"],
         "bars": ["The Listening Room", "Cellar Nine", "Moonglass Wine Bar", "Hush Lounge"],
@@ -51,9 +51,9 @@ MOODS = [
         "key": "loud",
         "artists": ["Riot Signal", "Concrete Saints", "Pitbox", "Black Ferry", "Static Youth",
                     "Gravel Mouth", "Hollow Engine", "Scrapyard Hymns", "Knuckle Choir", "Burnout Parade"],
-        "tags": [("hardcore", "genre"), ("skate culture", "keyword"), ("smash burgers", "keyword"),
-                 ("craft beer", "keyword"), ("energy drinks", "keyword"), ("tattoo", "keyword"),
-                 ("hot wings", "keyword"), ("streetwear", "keyword"), ("metalcore", "genre"), ("tacos", "keyword")],
+        "music": ["hardcore", "metalcore", "punk"],
+        "dishes": ["Smash burgers", "Hot wings", "Tacos", "Loaded fries"],
+        "drinks": ["Craft beer", "Energy drinks", "Cola"],
         "brands": ["Voltcan Energy", "Gritline Skate Supply", "Ironjaw Apparel", "Riffhouse Strings"],
         "eats": ["Smash Shack", "Wing Republic", "Night Taco Window", "Grill Pit 24", "Burnt Ends Diner"],
         "bars": ["Amp Room Taproom", "The Mosh Pit Bar", "Loading Dock Brewery", "Fuse Box Tavern"],
@@ -63,9 +63,9 @@ MOODS = [
         "key": "club",
         "artists": ["Pulse Theory", "Neon Delta", "Saltwater Drums", "Midnight Office", "Low Sun Collective",
                     "Kino Bloom", "Rhythm Atlas", "Glass Floor", "Dawn Shift", "Monoform"],
-        "tags": [("house music", "genre"), ("afrobeats", "genre"), ("mezcal", "keyword"), ("street food", "keyword"),
-                 ("late night", "keyword"), ("spritz", "keyword"), ("sneakers", "keyword"), ("ramen", "keyword"),
-                 ("electronic", "genre"), ("kombucha", "keyword")],
+        "music": ["house", "afrobeats", "electronic"],
+        "dishes": ["Ramen", "Street food", "Jollof rice", "Bao"],
+        "drinks": ["Mezcal", "Spritz", "Kombucha"],
         "brands": ["Basslane Headphones", "Kinetic Sneaker Co", "Spritzy Soda Works", "Afterglow Cosmetics"],
         "eats": ["Bao Window", "Ramen Lab", "Suya Corner", "Midnight Noodle Bar", "Jollof Junction"],
         "bars": ["Strobe Social", "Agave Room", "Rooftop 808", "Groove Cellar"],
@@ -75,9 +75,9 @@ MOODS = [
         "key": "roots",
         "artists": ["Rio Lento", "Cantina Dreams", "Sierra Bloom", "Los Faroles", "Ana del Monte",
                     "Brass Plaza", "Copper Valley", "Mariposa Strings", "Tierra Alta", "Banda Nocturna"],
-        "tags": [("regional mexican", "genre"), ("folk", "genre"), ("mezcal", "keyword"), ("tamales", "keyword"),
-                 ("horchata", "keyword"), ("cowboy boots", "keyword"), ("street tacos", "keyword"),
-                 ("aguas frescas", "keyword"), ("corridos", "genre"), ("mole", "keyword")],
+        "music": ["regional mexican", "corridos", "folk"],
+        "dishes": ["Street tacos", "Tamales", "Mole", "Elote"],
+        "drinks": ["Horchata", "Aguas frescas", "Mezcal"],
         "brands": ["Sol Lindo Beverages", "Botas Rancho Co", "Maizal Snacks", "Plaza Records"],
         "eats": ["Taqueria Faro", "Casa Mole", "Tamal Corner", "Elote Stand 7", "Comal Kitchen"],
         "bars": ["Mezcaleria Luna", "Cantina 22", "Agua Fresca Bar", "Patio Norte"],
@@ -185,24 +185,38 @@ def _insights(params: dict) -> dict:
             lat = lat0 + rng.uniform(-0.03, 0.03)
             lon = lon0 + rng.uniform(-0.04, 0.04)
             cuisine = mood["cuisines"][i % len(mood["cuisines"])]
-            tags = [{"id": "urn:tag:category:place:" + ("bar" if is_bar else "restaurant"),
+            tags = [{"tag_id": "urn:tag:category:place:" + ("bar" if is_bar else "restaurant"),
                      "name": ("Bar" if is_bar else "Restaurant") + SUFFIX, "type": "urn:tag:category:place"}]
-            if not is_bar:
-                tags.append({"id": f"urn:tag:genre:place:restaurant:fixture-{_slug(cuisine)}",
-                             "name": cuisine.title() + SUFFIX, "type": "urn:tag:genre:place"})
+            if is_bar:
+                drink = mood["drinks"][i % len(mood["drinks"])]
+                tags.append({"tag_id": f"urn:tag:beverage_offering:qloo:fixture-{_slug(drink)}",
+                             "name": drink + SUFFIX, "type": "urn:tag:beverage_offering:qloo"})
+            else:
+                tags.append({"tag_id": f"urn:tag:cuisine:qloo:fixture-{_slug(cuisine)}",
+                             "name": cuisine.title() + SUFFIX, "type": "urn:tag:cuisine:qloo"})
             out.append(_entity(n, ftype, rng, a, {
                 "entity_id": f"fixture-place-{_slug(city)}-{_slug(n)}",
                 "tags": tags,
                 "location": {"lat": round(lat, 5), "lon": round(lon, 5)},
-                "properties": {"address": f"{10 + i * 7} Fixture Street, {city or 'Anytown'}{SUFFIX}"},
+                "properties": {"address": f"{10 + i * 7} Fixture Street, {city or 'Anytown'}{SUFFIX}",
+                               "primary_genre": {"id": "urn:tag:genre:place:" + ("restaurant:bar" if is_bar
+                                                                                  else "restaurant")},
+                               "is_closed": False},
             }))
         return {"results": {"entities": out}}
 
     if ftype == "urn:tag":
+        types = params.get("filter.tag.types", "")
+        if "genre:music" in types:
+            names, subtype = mood["music"], "urn:tag:genre:music"
+        elif "specialty_dish" in types:
+            names, subtype = mood["dishes"], "urn:tag:specialty_dish:place"
+        else:
+            names, subtype = mood["drinks"] + mood["cuisines"], "urn:tag:genre:place"
         out = []
-        for (name, kind), a in zip(mood["tags"][:take], affinities(len(mood["tags"]))):
-            out.append({"id": f"urn:tag:{kind}:fixture:{_slug(name)}", "name": name + SUFFIX,
-                        "type": f"urn:tag:{kind}", "query": {"affinity": round(a, 3)}})
+        for name, a in zip(names[:take], affinities(len(names))):
+            out.append({"tag_id": f"{subtype}:fixture-{_slug(name)}", "name": name + SUFFIX,
+                        "subtype": subtype, "query": {"affinity": round(a, 3)}})
         return {"results": {"tags": out}}
 
     if ftype == "urn:demographics":
@@ -221,7 +235,7 @@ def _insights(params: dict) -> dict:
         lat0, lon0 = city_centre(city)
         hubs = [(lat0 + rng.uniform(-0.04, 0.04), lon0 + rng.uniform(-0.05, 0.05)) for _ in range(3)]
         out = []
-        for i in range(min(take, 60)):
+        for i in range(min(take, 50)):
             hlat, hlon = hubs[i % 3]
             out.append({
                 "location": {"latitude": round(hlat + rng.gauss(0, 0.008), 5),
