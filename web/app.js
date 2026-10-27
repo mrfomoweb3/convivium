@@ -139,9 +139,9 @@
     const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
     const last = pts[pts.length - 1];
     return `<svg class="spark" viewBox="0 0 230 64" aria-hidden="true">
-      <path d="${d} L220 64 L0 64 Z" fill="rgba(62,155,95,0.10)"/>
-      <path d="${d}" fill="none" stroke="#3E9B5F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="${last[0]}" cy="${last[1]}" r="5" fill="#fff" stroke="#3E9B5F" stroke-width="2.5"/></svg>`;
+      <path d="${d} L220 64 L0 64 Z" fill="rgba(92,196,135,0.12)"/>
+      <path d="${d}" fill="none" stroke="#5CC487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="${last[0]}" cy="${last[1]}" r="5" fill="#13211A" stroke="#5CC487" stroke-width="2.5"/></svg>`;
   }
 
   function groundedCount(plan, idx, generic) {
@@ -157,31 +157,33 @@
 
   /* ---------- home ---------- */
   function arcs() {
-    const rings = [260, 380, 500, 620, 740].map((r) => `<circle cx="850" cy="1000" r="${r}"/>`).join("");
+    const rings = [300, 420, 540, 660, 780].map((r) => `<circle cx="850" cy="620" r="${r}"/>`).join("");
     return `<svg class="arcs" viewBox="0 0 1700 1100" aria-hidden="true">${rings}
-      <circle class="orb" cx="452" cy="760" r="6" fill="#9DB7F0"/><circle class="orb" cx="1270" cy="690" r="6" fill="#9ED2AE"/>
-      <circle class="orb" cx="560" cy="930" r="6" fill="#F4C77A"/><circle class="orb" cx="1300" cy="905" r="6" fill="#B9A7F0"/></svg>`;
+      <circle class="orb" cx="548" cy="350" r="6" fill="#7EA6F5"/><circle class="orb" cx="1168" cy="330" r="6" fill="#5CC487"/>
+      <circle class="orb" cx="520" cy="520" r="6" fill="#F2B44E"/><circle class="orb" cx="1192" cy="540" r="6" fill="#A58BF0"/></svg>`;
   }
 
   function homeHtml() {
     return `
-    <section class="hero wrap">
-      ${arcs()}
-      <p class="eyebrow">An autonomous agent for venues and promoters</p>
-      <h1 class="display">Every show night.<br>Planned around the fans.</h1>
-      <p class="lede">Convivium reads Qloo's taste data for each headliner's fans, then plans the food, drinks, DJ set, partners and promotion, and sends it out on its own.</p>
-      <div class="cta">
-        <a class="btn btn-dark" href="#plan">Plan a night ${ARROW}</a>
-        <a class="btn btn-light" id="see-live" href="#recent">See a live plan</a>
+    <section class="hero">
+      <div class="wrap hero-copy">
+        <p class="eyebrow">An autonomous agent for venues and promoters</p>
+        <h1 class="display">Every show night.<br>Planned around the fans.</h1>
+        <p class="lede">Convivium reads Qloo's taste data for each headliner's fans, then plans the food, drinks, DJ set, partners and promotion, and sends it out on its own.</p>
       </div>
-      <div class="stage" id="stage">${stageHtml(null)}</div>
+      <div class="stage">
+        ${arcs()}
+        <div class="cta">
+          <a class="btn btn-dark" href="#plan">Plan a night ${ARROW}</a>
+          <a class="btn btn-light" id="see-live" href="#recent">See a live plan</a>
+        </div>
+        <div class="stage-cards" id="stage">${stageHtml(null)}</div>
+      </div>
+      <div class="powered" aria-label="Built with">
+        <span class="brand">Qloo</span><span class="brand">LangGraph</span><span class="brand">Groq</span>
+        <span class="brand">Leaflet</span><span class="brand">OpenStreetMap</span>
+      </div>
     </section>
-
-    <div class="wrap"><div class="powered" aria-label="Built with">
-      <span class="label">Built on</span>
-      <span class="brand">Qloo</span><span class="brand">LangGraph</span><span class="brand">Groq</span>
-      <span class="brand">Leaflet</span><span class="brand">OpenStreetMap</span>
-    </div></div>
 
     <section class="section wrap" id="plan">
       <div class="section-head">
@@ -563,7 +565,7 @@
     const pts = [];
     for (const p of heat) {
       const a = Math.max(0, Math.min(1, p.affinity || 0));
-      L.circleMarker([p.lat, p.lon], { radius: 5 + a * 13, color: "#D63E74", weight: 1, fillColor: "#D63E74", fillOpacity: 0.10 + a * 0.28 })
+      L.circleMarker([p.lat, p.lon], { radius: 5 + a * 13, color: "#FF6B9A", weight: 1, fillColor: "#FF6B9A", fillOpacity: 0.12 + a * 0.30 })
         .bindTooltip(`Fan density (affinity ${fmtAff(p.affinity)})`).addTo(map);
       pts.push([p.lat, p.lon]);
     }
