@@ -38,11 +38,11 @@ Every call is listed in each plan's **Qloo receipts** panel with its purpose, pa
 | `GET /v2/insights` `filter.type=urn:entity:brand` | `signal.interests.entities`, `take=10` | **Brand moments** and brand pitches |
 | `GET /v2/insights` `filter.type=urn:entity:place` | `signal.interests.entities`, `filter.location.query=<city>`, `filter.tags=…:restaurant`, `take=12` | **After-show partners**, plus the cuisine signals behind the food concepts |
 | same, with `filter.tags=…:bar` | | After-show bars, plus the bar-inspired guest menu |
-| `GET /v2/insights` `filter.type=urn:tag` | `signal.interests.entities`, `take=25` | **Taste analysis**: the tags behind the headline, the food and drink concepts and the audience read |
+| `GET /v2/insights` `filter.type=urn:tag` (3 typed calls) | `signal.interests.entities`, `filter.tag.types=urn:tag:specialty_dish:place` / `urn:tag:genre:place` / `urn:tag:genre:music,urn:tag:style:qloo` | **Taste analysis**: dishes, cuisines and music taste behind the food and drink concepts, the headline and the audience read. (Untyped tag calls return mostly media keywords, so every call is typed.) |
 | `GET /v2/insights` `filter.type=urn:demographics` | `signal.interests.entities` | Age and gender skew, which tunes the non-alcoholic share and the audience read |
-| `GET /v2/insights` `filter.type=urn:heatmap` | `signal.interests.entities`, `filter.location.query=<city>`, `take=60` | **Where the fans are**: the map, plus promo hotspots labelled with the nearest Qloo place |
+| `GET /v2/insights` `filter.type=urn:heatmap` | `signal.interests.entities`, `filter.location.query=<city>`, `take=50` | **Where the fans are**: the map, plus promo hotspots labelled with the nearest Qloo place |
 
-That's 11 Qloo calls per plan, with a 6-hour cache, retry and backoff on 429, and a clear error on 401/403. One failed call never sinks a run; it shows up as an honest gap instead.
+That's about a dozen Qloo calls per plan (more with support acts), with a 6-hour cache, retry and backoff on 429, and a clear error on 401/403. One failed call never sinks a run; it shows up as an honest gap instead.
 
 ## Why it doesn't work without Qloo
 
@@ -54,7 +54,7 @@ Every plan has a **With Qloo | Without Qloo** toggle. "Without" is the same task
 
 - **Grounded or removed.** Every artist, brand and venue the plan names must cite an id from the matching Qloo pool. The code drops items that don't, and renames items whose title doesn't match the entity they cite. The removals are shown in the plan.
 - **Venue rules critic.** Rules like alcohol-free (100% non-alcoholic, no alcoholic drinks), required dietary options, a partner cap, and lessons from past nights (no declined partners, no flopped items) are checked in code. They go back to the LLM as feedback, and anything left over is fixed deterministically.
-- **Honest labels.** Magenta = data from Qloo, with its affinity. Amber = agent inference. Offline fixture data says so in a banner and in every name. Sample calendar events say "Not a real tour date."
+- **Honest labels.** Rose = data from Qloo, with its affinity. Amber = agent inference. Every plan shows how many of its items Qloo backs ("21 of 21" with Qloo, "0 of 7" without). Offline fixture data says so in a banner and in every name. Sample calendar events say "Not a real tour date."
 - **Honest actions.** Nothing is reported as sent unless the provider accepted it. The public "Plan the night" form only drafts and never contacts anyone. It is rate-limited to 6 plans a minute per IP.
 - **Privacy.** No personal data goes to Qloo, only artist ids and a city name. Partner contact emails never reach the browser.
 
@@ -83,7 +83,7 @@ They cover the graph end to end, the grounding and rules guards, the LLM critic 
 
 The repo includes a `Dockerfile` and a Render blueprint (`render.yaml`: a paid tier so it never sleeps, plus a persistent disk for SQLite). Set `QLOO_API_KEY`, `GROQ_API_KEY` and `PUBLIC_URL`. After deploying, `/healthz` should report `"qloo_mode": "live"`.
 
-Map tiles: CARTO's dark basemap now needs an API key, so by default the map uses OpenStreetMap tiles darkened in CSS. Set `MAP_TILE_URL` to use another provider.
+Map tiles: CARTO's basemaps now need an API key, so by default the map uses OpenStreetMap tiles muted in CSS. Set `MAP_TILE_URL` to use another provider.
 
 ## Layout
 
