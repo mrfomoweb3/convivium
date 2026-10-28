@@ -31,3 +31,5 @@ services:
         value: "900"
       - key: SEED_DEMO
         value: "1"
+      - key: AUTO_RUN_GAP_SECONDS   # background plans one at a time, a minute apart (Groq free tier: 8k tokens/min)
+        value: "60"

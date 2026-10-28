@@ -47,6 +47,7 @@ class Settings:
     webhook_url: str
     db_path: str
     watch_interval_seconds: int
+    auto_run_gap_seconds: int
     watcher_enabled: bool
     seed_demo: bool
     public_url: str
@@ -78,6 +79,7 @@ def settings() -> Settings:
         webhook_url=env("WEBHOOK_URL", "").strip(),
         db_path=env("CONVIVIUM_DB", str(ROOT / "convivium.db")),
         watch_interval_seconds=max(30, int(env("WATCH_INTERVAL_SECONDS", "900") or 900)),
+        auto_run_gap_seconds=max(0, int(env("AUTO_RUN_GAP_SECONDS", "0") or 0)),
         watcher_enabled=_flag("WATCHER_ENABLED", "1"),
         seed_demo=_flag("SEED_DEMO", "1"),
         public_url=env("PUBLIC_URL", "http://localhost:8000").rstrip("/"),

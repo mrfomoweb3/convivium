@@ -21,7 +21,7 @@ from .config import ROOT, settings
 log = logging.getLogger(__name__)
 
 SAMPLES = ROOT / "samples"
-MAX_CONCURRENT_RUNS = 2
+MAX_CONCURRENT_RUNS = 2  # one at a time when AUTO_RUN_GAP_SECONDS is set (LLM rate limits)
 
 SPLIT_RE = re.compile(
     r"\s+(?:with|w/|feat\.|ft\.|featuring|supported by)\s+|\s+support:\s*|\s*\bw/\s*",
@@ -127,7 +127,7 @@ async def fetch_feed(url: str) -> str:
 
 class Watcher:
     def __init__(self) -> None:
-        self._sem = asyncio.Semaphore(MAX_CONCURRENT_RUNS)
+        self._sem = asyncio.Semaphore(1 if settings().auto_run_gap_seconds else MAX_CONCURRENT_RUNS)
         self._running: set[str] = set()
         self._tasks: set[asyncio.Task] = set()
         self._loop_task: asyncio.Task | None = None
@@ -170,6 +170,8 @@ class Watcher:
                 async with self._sem:
                     await run_agent(event_ctx(venue, event), venue["policy"], kind=kind, deliver=True,
                                     venue_id=venue["id"], event_id=event["id"], run_id=rid)
+                    # Paces background plans under a free-tier token budget, leaving room for live "Try it" runs.
+                    await asyncio.sleep(settings().auto_run_gap_seconds)
             finally:
                 self._running.discard(event["id"])
 
