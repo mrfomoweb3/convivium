@@ -1,7 +1,9 @@
 """The LangGraph agent.
 
-START → resolve ─┬─> gather → recall → plan ⟲ critic → finalize ─┬─> act → remember → END
-                 └─> baseline (same task, no Qloo) ──────────────┘
+START → resolve → gather → recall → plan ⟲ critic → finalize → act → remember → baseline → END
+
+The plan is saved as soon as `remember` finishes, so the person sees it without waiting on the
+no-Qloo baseline (same task, no Qloo), which runs last and is attached to the run when it lands.
 """
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ from .actions import run_actions
 from .llm import get_llm, llm_label
 from .memory import get_memory
 from .planner import (Plan, Policy, baseline_compose, check_policy, clean, deterministic_compose, enforce_policy,
-                      ground_promo, llm_compose, norm, validate)
+                      ground_promo, llm_compose, norm, strip_place_names, validate)
 from .qloo import (QlooAuthError, QlooError, current_trace, get_client, is_hospitality, near_cluster, safe,
                    start_trace)
 
@@ -90,7 +92,7 @@ async def resolve(state: State) -> dict:
 
 
 def after_resolve(state: State):
-    return END if state.get("error") else ["gather", "baseline"]
+    return END if state.get("error") else "gather"
 
 
 def _near_places(points: list[dict], places: list, max_km: float = 40.0) -> list[dict]:
@@ -227,6 +229,7 @@ async def finalize(state: State) -> dict:
     plan, fixes = enforce_policy(Plan(**state["plan"]), Policy(**state["policy"]), state["lessons"],
                                  state["pools"], state["ctx"])
     plan, dropped = validate(plan, state["pools"])
+    plan = strip_place_names(plan, state["pools"])
     plan = ground_promo(plan, state["pools"], state["ctx"]["city"])
     remaining = check_policy(plan, Policy(**state["policy"]), state["lessons"])
     notes = [f"Rule fixer made {len(fixes)} change(s)." if fixes else "No rule fixes needed."]
@@ -237,6 +240,8 @@ async def finalize(state: State) -> dict:
 
 
 async def baseline(state: State) -> dict:
+    if state.get("error"):
+        return {}
     plan, composer = await baseline_compose(get_llm(), state["ctx"], Policy(**state["policy"]))
     return {"baseline": plan.model_dump(), "baseline_composer": composer,
             "notes": [f"Wrote the without-Qloo baseline ({composer}) for comparison."]}
@@ -283,13 +288,14 @@ def build_graph():
     g.add_node("act", act)
     g.add_node("remember", remember)
     g.add_edge(START, "resolve")
-    g.add_conditional_edges("resolve", after_resolve, ["gather", "baseline", END])
+    g.add_conditional_edges("resolve", after_resolve, ["gather", END])
     g.add_edge("gather", "recall")
     g.add_edge("recall", "plan")
     g.add_conditional_edges("plan", critic, ["plan", "finalize"])
-    g.add_edge(["finalize", "baseline"], "act")
+    g.add_edge("finalize", "act")
     g.add_edge("act", "remember")
-    g.add_edge("remember", END)
+    g.add_edge("remember", "baseline")
+    g.add_edge("baseline", END)
     return g.compile()
 
 
@@ -302,6 +308,19 @@ NODE_LABELS = {
 }
 
 
+def _meta(final: dict, trace: list, t0: float) -> dict:
+    return {
+        "composer": final.get("composer"), "attempts": final.get("attempts"),
+        "dropped": final.get("dropped", []), "violations": final.get("violations", []),
+        "fixes": final.get("fixes", []), "actions": [{k: a[k] for k in ("kind", "recipient", "status", "detail")}
+                                                     for a in final.get("actions", [])],
+        "memory_used": final.get("memory_text", []), "lessons": final.get("lessons", {}),
+        "resolved": final.get("resolved"), "qloo_mode": get_client().mode,
+        "calls": len(trace), "total_ms": round((time.perf_counter() - t0) * 1000),
+        "baseline_composer": None,
+    }
+
+
 async def run_agent(ctx: dict, policy: dict, kind: str = "try", deliver: bool = False, venue_id: str | None = None,
                     event_id: str | None = None, run_id: str | None = None) -> str:
     rid = run_id or store.create_run(kind, ctx, policy, venue_id, event_id)
@@ -309,6 +328,7 @@ async def run_agent(ctx: dict, policy: dict, kind: str = "try", deliver: bool = 
     t0 = time.perf_counter()
     store.update_run(rid, status="running")
     final: dict[str, Any] = {}
+    plan: dict = {}
     try:
         state: State = {"ctx": ctx, "policy": Policy(**policy).model_dump(), "kind": kind, "deliver": deliver,
                         "venue_id": venue_id, "run_id": rid, "notes": []}
@@ -320,22 +340,15 @@ async def run_agent(ctx: dict, policy: dict, kind: str = "try", deliver: bool = 
                                         "notes": update.get("notes", []), "t": round(time.perf_counter() - t0, 2)})
                 if node == "gather":
                     store.update_run(rid, pools=update.get("pools"), trace=current_trace())
+                if node == "remember" and not final.get("error"):
+                    plan = final["plan"]
+                    plan["_meta"] = _meta(final, trace, t0)
+                    store.update_run(rid, status="done", plan=plan, pools=final.get("pools"), trace=trace)
+                if node == "baseline" and plan:
+                    plan["_meta"]["baseline_composer"] = final.get("baseline_composer")
+                    store.update_run(rid, plan=plan, baseline=final.get("baseline"))
         if final.get("error"):
-            store.update_run(rid, status="error", error=final["error"], trace=trace, baseline=final.get("baseline"))
-            return rid
-        plan = final["plan"]
-        plan["_meta"] = {
-            "composer": final.get("composer"), "attempts": final.get("attempts"),
-            "dropped": final.get("dropped", []), "violations": final.get("violations", []),
-            "fixes": final.get("fixes", []), "actions": [{k: a[k] for k in ("kind", "recipient", "status", "detail")}
-                                                         for a in final.get("actions", [])],
-            "memory_used": final.get("memory_text", []), "lessons": final.get("lessons", {}),
-            "resolved": final.get("resolved"), "qloo_mode": get_client().mode,
-            "calls": len(trace), "total_ms": round((time.perf_counter() - t0) * 1000),
-            "baseline_composer": final.get("baseline_composer"),
-        }
-        store.update_run(rid, status="done", plan=plan, baseline=final.get("baseline"), pools=final.get("pools"),
-                         trace=trace)
+            store.update_run(rid, status="error", error=final["error"], trace=trace)
     except Exception as exc:
         log.error("run %s failed: %s", rid, traceback.format_exc())
         store.update_run(rid, status="error", error=f"The agent hit an unexpected error: {exc}", trace=trace)

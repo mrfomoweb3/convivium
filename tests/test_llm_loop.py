@@ -46,7 +46,9 @@ async def test_violations_trigger_replan_and_guards_still_apply(monkeypatch):
     meta = run["plan"]["_meta"]
     assert meta["composer"] == "llm:fake"
     assert meta["attempts"] == 2
-    assert "Fix every one" in fake.prompts[-1]  # violations were fed back to the model
+    plan_prompts = [p for p in fake.prompts if "Evidence pools" in p]
+    assert "Fix every one" in plan_prompts[-1]  # violations were fed back to the model
+    assert "Evidence pools" not in fake.prompts[-1]  # the no-Qloo baseline runs last
     titles = [i["title"] for i in run["plan"]["dj_set"]]
     assert "Totally Invented DJ" not in titles
     assert any(d["title"] == "Totally Invented DJ" for d in meta["dropped"])

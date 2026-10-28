@@ -150,3 +150,16 @@ def test_marketing_words_are_swapped_for_plain_ones():
     from app.planner import plain
 
     assert plain("A curated soirée with British vibe and seafood flair") == "A chosen night with British feel and seafood touch"
+
+
+def test_place_names_are_kept_out_of_menu_titles():
+    from app.planner import strip_place_names
+
+    pools = {"eats": [{"name": "Lucky's"}, {"name": "The Castle Vaults"}], "bars": [{"name": "Foggy Dew"}]}
+    plan = Plan(headline="h", audience_read="a",
+                food=[Item(title="Lucky's Irish Beef & Ale Pie"), Item(title="The Castle Vaults Steak Bites"),
+                      Item(title="Castle Vaults – Oysters"), Item(title="Colcannon")],
+                drinks=[Item(title="Foggy Dew Pub-Style Stout"), Item(title="Lucky's")])
+    plan = strip_place_names(plan, pools)
+    assert [i.title for i in plan.food] == ["Irish Beef & Ale Pie", "Steak Bites", "Oysters", "Colcannon"]
+    assert [i.title for i in plan.drinks] == ["Pub-Style Stout", "Lucky's"]

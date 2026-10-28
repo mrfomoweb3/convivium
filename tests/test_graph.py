@@ -17,6 +17,7 @@ async def test_run_reaches_done_with_every_section():
     nodes = {s["node"] for s in run["steps"]}
     assert nodes == {"resolve", "gather", "recall", "plan", "finalize", "baseline", "act", "remember"}
     assert plan["_meta"]["qloo_mode"] == "fixture"
+    assert [s["node"] for s in run["steps"]][-1] == "baseline"  # the plan never waits on the baseline
     assert all(t["data_source"] == "fixture" for t in run["trace"])
 
 

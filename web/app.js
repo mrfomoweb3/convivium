@@ -589,6 +589,14 @@
     const generic = state.mode === "without";
     const fullPlan = run.plan || {};
     const meta = fullPlan._meta || {};
+    if (generic && !run.baseline) {
+      view.innerHTML = `<div class="wrap"><div class="run-head">${header(run)}<h1 class="h1">${esc(fullPlan.headline)}</h1>
+        <div class="controls"><div class="seg" role="group" aria-label="Compare with and without Qloo">
+          <button type="button" data-mode="with" aria-pressed="false">With Qloo</button>
+          <button type="button" data-mode="without" aria-pressed="true">Without Qloo</button></div></div>
+        <p class="without-note" role="status">Writing the same plan without Qloo for comparison. This takes a few seconds.</p></div></div>`;
+      return;
+    }
     const plan = generic ? run.baseline : fullPlan;
     const idx = poolIndex(run.pools);
     state.idx = idx;
@@ -639,7 +647,7 @@
     else destroyMap();
   }
 
-  const NODE_ORDER = ["resolve", "baseline", "gather", "recall", "plan", "finalize", "act", "remember"];
+  const NODE_ORDER = ["resolve", "gather", "recall", "plan", "finalize", "act", "remember", "baseline"];
 
   function renderProgress(run) {
     destroyMap();
@@ -685,11 +693,16 @@
       return;
     }
     if (state.runId !== id) return;
-    const key = `${run.status}|${(run.steps || []).length}|${(run.trace || []).length}|${run.updated}`;
+    const key = `${run.status}|${(run.steps || []).length}|${(run.trace || []).length}|${run.updated}|${!!run.baseline}`;
     const changed = key !== state.lastKey;
     state.lastKey = key;
     state.run = run;
-    if (run.status === "done") { if (changed) renderPlan(run); }
+    if (run.status === "done") {
+      // The plan lands first; the no-Qloo baseline follows. Only the "without" view needs the redraw.
+      if (changed && (state.mode === "without" || !state.planShown)) renderPlan(run);
+      state.planShown = true;
+      if (!run.baseline) state.pollTimer = setTimeout(() => loadRun(id), 2000);
+    }
     else if (run.status === "error") { if (changed) renderError(run); }
     else {
       if (changed) renderProgress(run);
@@ -826,6 +839,7 @@
     if (m) {
       if (state.runId !== m[1]) { state.mode = m[2] ? "without" : "with"; state.lastKey = ""; }
       state.runId = m[1];
+      state.planShown = false;
       state.page = "run";
       view.innerHTML = `<div class="wrap"><p class="muted" role="status" style="padding-top:60px">Loading the plan…</p></div>`;
       window.scrollTo(0, 0);

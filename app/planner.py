@@ -782,6 +782,22 @@ def explains(ent: dict, item: Item, section: str) -> bool:
     return False
 
 
+def strip_place_names(plan: Plan, pools: dict) -> Plan:
+    """A menu item isn't a restaurant: "Lucky's Beef Pie" becomes "Beef Pie". The place stays in the evidence."""
+    names = set()
+    for e in pools.get("eats", []) + pools.get("bars", []):
+        n = clean(e["name"])
+        names |= {n, re.sub(r"^the\s+", "", n, flags=re.IGNORECASE)}
+    for item in plan.food + plan.drinks:
+        for n in sorted(names, key=len, reverse=True):
+            m = re.match(re.escape(n) + r"(?:'s)?[\s:–—-]+(.{3,})$", item.title, re.IGNORECASE)
+            if m:
+                rest = m.group(1).strip()
+                item.title = rest[0].upper() + rest[1:]
+                break
+    return plan
+
+
 def ground_promo(plan: Plan, pools: dict, city: str) -> Plan:
     """Lead promo with Qloo heatmap hotspots; keep at most two of the composer's own ideas after them."""
     hotspots = promo_bullets(pools, city)
