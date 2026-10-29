@@ -66,6 +66,8 @@ def seed_demo() -> None:
 async def lifespan(app: FastAPI):
     s = settings()
     store.init_db()
+    if n := store.recover_interrupted_runs():
+        log.info("Recovered %d run(s) interrupted by a restart; their shows will be planned again", n)
     if s.seed_demo:
         seed_demo()
     log.info("Convivium starting: qloo=%s planner=%s memory=%s", get_client().mode, llm_label(),

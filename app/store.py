@@ -144,6 +144,21 @@ def mark_event_planned(eid: str, fingerprint: str, run_id: str) -> None:
 
 # ---- runs ----------------------------------------------------------------------
 
+def recover_interrupted_runs() -> int:
+    """Runs live in memory, so a restart orphans any that were queued or running. Fail them honestly and clear
+    their events' planned fingerprint so the watcher plans those shows again."""
+    with db() as c:
+        ids = [r[0] for r in c.execute("SELECT id FROM runs WHERE status IN ('queued', 'running')").fetchall()]
+        if not ids:
+            return 0
+        marks = ",".join("?" * len(ids))
+        c.execute(f"UPDATE runs SET status='error', error=?, updated=? WHERE id IN ({marks})",
+                  ("Interrupted by a server restart before it finished; the show is being planned again.",
+                   time.time(), *ids))
+        c.execute(f"UPDATE events SET planned_fingerprint=NULL WHERE last_run_id IN ({marks})", ids)
+    return len(ids)
+
+
 def create_run(kind: str, ctx: dict, policy: dict, venue_id: str | None = None, event_id: str | None = None) -> str:
     rid = new_id("r_")
     now = time.time()

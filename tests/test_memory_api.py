@@ -102,3 +102,15 @@ def test_outcome_replans_next_shows(client):
 def test_connect_rejects_paths_outside_project(client):
     res = client.post("/api/venues", json={"name": "X", "city": "Y", "ical_url": "/etc/passwd"})
     assert res.status_code == 400
+
+
+def test_runs_interrupted_by_a_restart_are_failed_and_replanned():
+    vid = store.create_venue("V", "New York", "samples/ironworks-room.ics", {})["id"]
+    ev = store.upsert_event(vid, {"uid": "u1", "summary": "Laufey", "start": "2026-11-11T20:00", "headliner": "Laufey",
+                                  "support": [], "fingerprint": "fp1"})
+    rid = store.create_run("auto", {"headliner": "Laufey", "city": "New York"}, {}, vid, ev["id"])
+    store.mark_event_planned(ev["id"], "fp1", rid)
+    assert store.recover_interrupted_runs() == 1
+    assert store.get_run(rid)["status"] == "error"
+    assert store.get_event(ev["id"])["planned_fingerprint"] is None
+    assert store.recover_interrupted_runs() == 0
