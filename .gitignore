@@ -7,3 +7,8 @@ __pycache__/
 .pytest_cache/
 scripts/probe_out/
 .DS_Store
+
+# demo video build outputs
+video/renders/
+video/.hyperframes/
+video/node_modules/
